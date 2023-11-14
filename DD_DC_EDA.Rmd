@@ -1,0 +1,95 @@
+---
+title: "EDA"
+author: "Dmitrii Zhakota"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dlookr)
+library(dplyr)
+library(flextable)
+# library(tidyverse)
+```
+
+# Load source data
+```{r}
+df <- read_excel("data/raw/Epic Supra V.1 test30.09.23.xlsx", 
+    na = "NA", skip = 1)
+
+```
+
+#Diagnosis Data
+```{r}
+df %>% 
+  overview() %>%
+  flextable()
+
+
+df %>% 
+  diagnose() %>% 
+  flextable()
+
+df %>% 
+  plot_na_pareto()
+
+# df %>% 
+#   plot_na_hclust()
+# 
+# df %>% 
+#   plot_na_intersect()
+
+df %>% 
+  glimpse()
+
+```
+
+# Data clearning
+```{r}
+# Привести к факторам или числам
+factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, NA))}) %>% colnames()
+factors_list <- c("Item", "GESCHLECHT")
+
+df %>%  mutate(across(
+  c(all_of(factors_auto), all_of(factors_list)), as.factor
+)) -> df1
+
+
+glimpse(df1)
+
+df1 %>% 
+  select(is.character) -> df1_char
+
+# Round all numeric columns
+df1 %>% 
+  select(where(is.numeric)) %>% 
+  mutate_all(round, 2) -> df1_num
+
+```
+
+
+
+#Общий отчёт
+```{r}
+diagnose_web_report(df1, output_file = "Diagn.html", output_dir = "./data/interim", title = "Data Diagnosis IAK3", browse = FALSE)
+
+diagnose_numeric(df1_num, output_file = "Diagn_num.html", output_dir = "./data/interim", title = "Data Diagnosis IAK3", browse = FALSE)
+
+diagnose_category(df1_char)
+
+eda_web_report(df1, output_file = "EDA.html", output_dir = "./data/imterim", title = "Data Diagnosis IAK3", browse = FALSE)
+
+
+
+```
+
+
+# Exploratory Data Analysis
+```{r}
+
+
+```
+
+
