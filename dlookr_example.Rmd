@@ -1,0 +1,36 @@
+---
+title: "dlookr example"
+author: "Dmitrii Zhakota"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dlookr)
+library(dplyr)
+```
+
+```{r}
+data(mtcars)
+factors_auto <- mtcars %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2))}) %>% colnames()
+factors_list <- c("cyl")
+
+mtcars %>%  mutate(across(
+  c(all_of(factors_auto), all_of(factors_list)), as.factor
+)) -> mtcars
+
+
+# Delete random values in numeric columns data frame mtcars. Result write in new data frame mtcars_ex.
+mtcars_ex <- mtcars %>% mutate(across(where(is.numeric), ~ifelse(runif(n()) < 0.1, NA, .)))  
+  
+
+mtcars_ex %>% 
+    plot_na_pareto()
+
+diagnose_web_report(mtcars_ex)
+eda_web_report(mtcars_ex)
+
+```
+
