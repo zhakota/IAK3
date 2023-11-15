@@ -8,21 +8,88 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(readxl)
+library(openxlsx)
 library(dlookr)
-library(dplyr)
+# library(dplyr)
 library(flextable)
-# library(tidyverse)
+library(tidyverse)
 ```
 
 # Load source data
 ```{r}
-df <- read_excel("data/raw/Epic Supra V.1 test30.09.23.xlsx", 
-    na = "NA", skip = 1)
+# Читает исходный файл excel
+#даты остаются в формате POSIXct POSIXt, но ломаются даты в колонках типа STERBEDAT
+df_readxl <- read_xlsx("data/raw/Epic Supra V.1 test30.09.23.xlsx", na = "", skip = 1)
 
+class(df_readxl$GEBURT)
+class(df_readxl$STERBEDAT)
+
+
+
+# В исходном xlsx удалил первую строку. Класс дат задан вручную, но удаляются любые другие символы в колонках дат (см. STERBEDAT исходный файл - unbekannt). Дополнительно побились названия колонок.
+# НАДО ПЕРЕИМЕНОВАТЬ НАЗВАНИ КОЛОНОК
+df_readxl_manual_date <- read_excel("data/raw/Epic Supra.xlsx",  
+    col_types = c("numeric", "date", "numeric", 
+        "numeric", "date", "numeric", "date", 
+        "text", "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "text", "date", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "text", "numeric", "numeric", 
+        "numeric", "text", "text", "text", 
+        "text", "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "text", "numeric", "text", 
+        "date", "text", "text", "date", "text", 
+        "text", "date", "text", "text", "date", 
+        "text", "text", "date", "text", "text", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", 
+        "text", "numeric", "text", "text", 
+        "numeric", "text", "text", "text", 
+        "text", "text", "numeric", "numeric", 
+        "numeric", "date", "numeric", "numeric", 
+        "numeric"))
+
+#Даты ломаются или ошибка создания датафрейма при detectDates = TRUE
+df_openxlsx <- read.xlsx("data/raw/Epic Supra V.1 test30.09.23.xlsx", startRow = 2, detectDates = FALSE) 
+
+
+# Сохранил исходный xlsx в csv. Автоматически все даты сохраняет как класс character. Ломаются даты представленные только годом, если их приорабразовать в asDate (см. строки 75-76). ВОзможно, придётся руками задавать классы колонок.
+df_readr <- read_delim("data/raw/Epic Supra V.1.csv",
+    delim = ";", escape_double = FALSE, na = "NA",
+    trim_ws = TRUE)
+
+# df_readr$GEBURT = as.Date(df_readr$GEBURT, "%d.%m.%Y")
+# df_readr$STERBEDAT = as.Date(df_readr$STERBEDAT, format = c("%d.%m.%Y", "%Y"), tryFormats = c("%d.%m.%Y", "%y", "%Y", "%Y-%m-%d", "%Y/%m/%d"))
+# 
+# class(df_readr$GEBURT)
+
+# write_csv(df, "data/interim/df.csv")
+# 
+# df <- read_csv("data/interim/df.csv")
+
+# Удаляем лишние датафреймы
+rm("df_openxlsx", "df_readxl", "df_readxl_manual_date")
 ```
 
 #Diagnosis Data
 ```{r}
+df <- df_readr
+
+
 df %>% 
   overview() %>%
   flextable()
@@ -35,21 +102,20 @@ df %>%
 df %>% 
   plot_na_pareto()
 
-# df %>% 
-#   plot_na_hclust()
-# 
-# df %>% 
-#   plot_na_intersect()
-
 df %>% 
   glimpse()
 
+df %>% 
+  summary()
+
+# Удаляем лишние датафреймы
+rm("df_readr")
 ```
 
 # Data clearning
 ```{r}
 # Привести к факторам или числам
-factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, NA))}) %>% colnames()
+factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, NA))}) %>% colnames()
 factors_list <- c("Item", "GESCHLECHT")
 
 df %>%  mutate(across(
@@ -59,28 +125,106 @@ df %>%  mutate(across(
 
 glimpse(df1)
 
-df1 %>% 
-  select(is.character) -> df1_char
+
+# Convert columns if class is POSIXct or POSIXt to date
+# df %>% 
+#   select(where(is.infinite.POSIXlt)) %>% 
+#   mutate_all(as.Date) -> df1_date
+# 
+# df_date <- as.data.frame(lapply(df1, function(x) ifelse(is.POSIXct(x), as.Date(x), x)))
+
+# df1$GEBURT <- as.Date(df$GEBURT)
+
+class(df$GEBURT)
+
+
+# Delete columns if more than 50% of values are NA
+df1_no_na_col <- df1 %>% select_if(~sum(!is.na(.))/length(.) >= 0.5)
 
 # Round all numeric columns
-df1 %>% 
-  select(where(is.numeric)) %>% 
-  mutate_all(round, 2) -> df1_num
+# df1 %>% 
+#   select(where(is.numeric)) %>% 
+#   mutate_all(round, 2) -> df1_num
+
+
+# Удаляем лишние датафреймы
 
 ```
 
 
-
-#Общий отчёт
+#Предварительный отчёт
 ```{r}
-diagnose_web_report(df1, output_file = "Diagn.html", output_dir = "./data/interim", title = "Data Diagnosis IAK3", browse = FALSE)
+# Отчёт по датафрейму со всеми признаками
+diagnose_web_report(df1,
+                    output_file = "Diagn_df1.html",  
+                    title = "Data Diagnosis Web",
+                    subtitle = deparse(substitute(.data))
+                    )
 
-diagnose_numeric(df1_num, output_file = "Diagn_num.html", output_dir = "./data/interim", title = "Data Diagnosis IAK3", browse = FALSE)
+eda_web_report(df1,
+               output_file = "EDA_df1.html",
+               title = "Exploratory Data Analysis",
+               subtitle = deparse(substitute(.data))
+               )
 
-diagnose_category(df1_char)
+# Отчёт по датафрейму после удаления признаков, в которых больше 50% пропущенных значений
+diagnose_web_report(df1_no_na_col,
+                    output_file = "Diagn_df1_no_na_col.html",  
+                    title = "Data Diagnosis",
+                    subtitle = deparse(substitute(.data))
+                    )
 
-eda_web_report(df1, output_file = "EDA.html", output_dir = "./data/imterim", title = "Data Diagnosis IAK3", browse = FALSE)
+eda_web_report(df1_no_na_col,
+               output_file = "EDA_df1_no_na_col.html",
+               title = "Exploratory Data Analysis",
+               subtitle = deparse(substitute(.data))
+               )
 
+
+# diagnose_paged_report(df1_no_na_col, 
+#                       output_format = "html", 
+#                       output_file = "Diagn.html", 
+#                       output_dir = "./data/imterim", 
+#                       title = "Data Diagnosis")
+
+
+
+```
+
+# Статичные отчёты
+```{r}
+# Статичтные отчёты Diagos Data
+diagnose_paged_report(df1,
+                      output_format = "html",
+                      output_file = "Diagn_df1.html",
+                      output_dir = "."
+                      )
+
+diagnose_paged_report(df1_no_na_col,
+                      output_file = "Diagn_df1_no_na_col.html",
+                      output_format = "html",
+                      output_dir = "."
+                      )
+
+# Статичные отчёты EDA
+eda_paged_report(df1,
+                 output_file = "EDA_df1.html",
+                 output_format = "html",
+                 output_dir = "."
+                      )
+
+eda_paged_report(df1_no_na_col,
+                 output_file = "EDA_df1_no_na_col.html", 
+                 output_format = "html",
+                 output_dir = "."
+                      )
+
+# diagnose_paged_report(df1_no_na_col,
+#                       output_dir = "./data/interim/",
+#                       output_format = "html")
+# 
+# diagnose_paged_report(df1_no_na_col,
+#                       output_format = "pdf")
 
 
 ```
