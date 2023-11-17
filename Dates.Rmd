@@ -1,0 +1,37 @@
+---
+title: "Reading dates"
+author: "Filimonova Irina"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+library(tidyverse)
+library(readxl)
+
+```
+
+
+
+```{r}
+df_readxl <- read_xlsx("data/raw/Epic Supra V.1 test30.09.23.xlsx", na = c("", "unbekannt"), skip = 1)
+
+summary(df_readxl)
+
+#Предлагаю следующий код для преобразования дат, просьба еще раз проверить его; привожу все даты к одному типу, чтобы было возможно проводить операции с ними.
+
+#Мне не нравится условие в if_else, возможно, предложете более изящное решение
+
+df_readxl <- df_readxl %>%
+  mutate(across(c(GEBURT, OP_DATUM, REOP_DAT, REOP_DAT2, REOP_DAT3, REOP_DAT4, REOP_DAT5, DATUM), ~ as.Date(. ))) %>% 
+  mutate(across(c(STERBEDAT, LAST_FU), ~ if_else(nchar(.) == 4, ymd(make_date(.)), ymd(openxlsx::convertToDate(.))))) 
+  
+#mutate(`EF (%)` = as.numeric(`EF (%)`))
+# Проверить типы колонок; для данных по ЭХО КГ, объединенных FUEcho, из-за неправильного формата ячеек в файле эксель, некоторые числовые переменные перевелись в формат character
+```
+
+
+
+
