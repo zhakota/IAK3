@@ -274,11 +274,11 @@ df1_no_na_col <- df1_no_date %>% select_if(~sum(!is.na(.))/length(.) >= 0.5)
 #   mutate_all(round, 2) -> df1_num
 
 # Сохраняем датафреймы
-write.csv(df_read_excel, "data/interim/df_read_excel.csv")
-write.csv(df, "data/interim/df.csv")
-write.csv(df1, "data/interim/df1.csv")
-write.csv(df1_no_date, "data/interim/df1_no_date.csv")
-write.csv(df1_no_na_col, "data/interim/df1_no_na_col.csv")
+write.csv(df_read_excel, "data/interim/df_read_excel.csv", row.names = FALSE)
+write.csv(df, "data/interim/df.csv", row.names = FALSE)
+write.csv(df1, "data/interim/df1.csv", row.names = FALSE)
+write.csv(df1_no_date, "data/interim/df1_no_date.csv", row.names = FALSE)
+write.csv(df1_no_na_col, "data/interim/df1_no_na_col.csv", row.names = FALSE)
 
 
 # Удаляем лишние датафреймы
@@ -357,7 +357,132 @@ eda_paged_report(df1_no_na_col,
 
 
 # Exploratory Data Analysis
+
+## Clustering
 ```{r}
+df <- read.csv("data/interim/df1_no_date.csv")
+
+# Привести к факторам или числам
+factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
+factors_list <- c("GESCHLECHT")
+
+df %>%  mutate(across(
+  c(all_of(factors_auto), all_of(factors_list)), as.factor
+)) -> df
+
+str(df) # Обязательно проверить присвоение классов. Иногда не срабатывает
+
+
+df_new <- df %>% 
+  select(where(is.numeric)) %>% 
+  select(-c(Item)) %>%  # Удаляем Item, так как он не несёт смысловой нагрузки
+  mutate_all(round, 1)  
+  # stats::na.omit()
+
+
+
+library(pheatmap)
+df_new_scaled <- scale(df_new)
+
+
+df_new_dist <- dist(df_new_scaled, 
+                        method = "euclidean"
+                        )
+
+as.matrix(df_new_dist)[1:35,1:35]
+
+pheatmap(df_new_scaled, 
+         scale = "row", 
+         clastering_distance_rows = df_new_dist,
+         claster_method = "ward.D2",
+         cutree_rows = 5, # группируем (условно)
+         cutree_cols = length(colnames(df_new_scaled))
+)
+
+
+```
+
+
+## PCA
+<!-- Проводим PCA анализ, что бы снизить размерность данных. Сравнить с тем, что порекомендует Охотин объединить. В первую очередь это касается ЭхоКГ. -->
+
+```{r}
+rm()
+# # Датафрейм  только с удалёнными датами содержит много пропуcков. В итоге удаляются все строки.
+# read.csv("data/interim/df1_no_date.csv") -> df1_no_date
+# 
+# # # Привести к факторам или числам
+# factors_auto <- df1_no_date %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
+# factors_list <- c("Item", "GESCHLECHT")
+# 
+# df1_no_date %>%  mutate(across(
+#   c(all_of(factors_auto), all_of(factors_list)), as.factor
+# )) -> df1_no_date
+# 
+# df1_pca <- df1_no_date %>% 
+#   select(where(is.numeric)) %>% 
+#   # select(-c(MORTALITAT_TAGE)
+#   mutate_all(round, 1) %>% 
+#   stats::na.omit()
+
+
+# Датафрейм без дат и без колонок с количеством пропущенных значений больше 50% годится в работу.
+read.csv("data/interim/df1_no_na_col.csv") -> df1_no_na_col
+
+# Привести к факторам или числам
+factors_auto <- df1_no_na_col %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
+factors_list <- c("GESCHLECHT")
+
+df1_no_na_col %>%  mutate(across(
+  c(all_of(factors_auto), all_of(factors_list)), as.factor
+)) -> df1_no_na_col
+
+str(df1_no_na_col) # Обязательно проверить присвоение классов. Иногда не срабатывает
+
+
+df1_pca <- df1_no_na_col %>% 
+  select(where(is.numeric)) %>% 
+  # select(-c(MORTALITAT_TAGE)
+  mutate_all(round, 1) %>% 
+  stats::na.omit()
+
+
+
+library(FactoMineR)
+
+df_full.pca <- prcomp(df1_pca, 
+                        scale = TRUE)
+
+summary(df_full.pca)
+
+
+library(factoextra)
+
+fviz_eig(df_full.pca, addlabels = TRUE)
+
+fviz_pca_var(df_full.pca, col.var = "contrib")
+
+fviz_pca_var(df_full.pca, 
+             select.var = list(contrib = 3), # Задаём число здесь 
+             col.var = "contrib")
+
+fviz_contrib(df_full.pca, choice = "var", axes = 1, top = 24) # 1
+fviz_contrib(df_full.pca, choice = "var", axes = 2, top = 24) # 2
+fviz_contrib(df_full.pca, choice = "var", axes = 3, top = 24) # 3
+
+library(ggbiplot)
+
+df0 <- df1_no_na_col %>% 
+  select(c(Item, UPSIZING))
+
+df1_pca2 <- left_join(df1_pca, df0, "Item" )
+
+ggbiplot(df_full.pca, 
+         scale=0, 
+         groups = as.factor(df1_pca2$UPSIZING), 
+         ellipse = TRUE,
+         alpha = 0.2) +
+  theme_minimal()
 
 
 ```
