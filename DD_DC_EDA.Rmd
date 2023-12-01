@@ -8,134 +8,21 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(readxl)
-library(openxlsx)
+# library(openxlsx)
 library(dlookr)
 # library(dplyr)
 library(flextable)
 library(tidyverse)
 ```
 
-# Load source data
-```{r eval=FALSE, include=FALSE}
-# Читает исходный файл excel
-#даты остаются в формате POSIXct POSIXt, но ломаются даты в колонках типа STERBEDAT
-df_readxl <- read_xlsx("data/raw/Epic Supra V.1 test30.09.23.xlsx", na = "", skip = 1)
-
-
-class(df_readxl$GEBURT)
-class(df_readxl$STERBEDAT)
-
-
-
-# В исходном xlsx удалил первую строку. Класс дат задан вручную, но удаляются любые другие символы в колонках дат (см. STERBEDAT исходный файл - unbekannt). Дополнительно побились названия колонок.
-# НАДО ПЕРЕИМЕНОВАТЬ НАЗВАНИ КОЛОНОК
-df_readxl_manual_date <- read_excel("data/raw/Epic Supra.xlsx",  
-    col_types = c("numeric", "date", "numeric", 
-        "numeric", "date", "numeric", "date", 
-        "text", "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "text", "date", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "text", "numeric", "numeric", 
-        "numeric", "text", "text", "text", 
-        "text", "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "text", "numeric", "text", 
-        "date", "text", "text", "date", "text", 
-        "text", "date", "text", "text", "date", 
-        "text", "text", "date", "text", "text", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "text", "numeric", "text", "text", 
-        "numeric", "text", "text", "text", 
-        "text", "text", "numeric", "numeric", 
-        "numeric", "date", "numeric", "numeric", 
-        "numeric"))
-
-#Даты ломаются или ошибка создания датафрейма при detectDates = TRUE
-df_openxlsx <- read.xlsx("data/raw/Epic Supra V.1 test30.09.23.xlsx", startRow = 2, detectDates = FALSE) 
-
-
-# Сохранил исходный xlsx в csv. Автоматически все даты сохраняет как класс character. Ломаются даты представленные только годом, если их приорабразовать в asDate (см. строки 75-76). ВОзможно, придётся руками задавать классы колонок.
-df_readr <- read_delim("data/raw/Epic Supra V.1.csv",
-    delim = ";", escape_double = FALSE, na = "NA",
-    trim_ws = TRUE)
-
-# df_readr$GEBURT = as.Date(df_readr$GEBURT, "%d.%m.%Y")
-# df_readr$STERBEDAT = as.Date(df_readr$STERBEDAT, format = c("%d.%m.%Y", "%Y"), tryFormats = c("%d.%m.%Y", "%y", "%Y", "%Y-%m-%d", "%Y/%m/%d"))
-# 
-# class(df_readr$GEBURT)
-
-# write_csv(df, "data/interim/df.csv")
-# 
-# df <- read_csv("data/interim/df.csv")
-
-
-# Удаляем лишние датафреймы
-rm("df_openxlsx", "df_readxl", "df_readxl_manual_date")
-```
-
-# Load modified data v1
-```{r eval=FALSE, include=FALSE}
-# После модификациии в excel. Даты в формате YYYY побились
-df_read_excel <- read_excel("data/raw/Epic Supra V.1 mod.xlsx", 
-    col_types = c("numeric", "date", "numeric", 
-        "numeric", "date", "numeric", "date", 
-        "text", "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "text", "date", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "text", "numeric", "numeric", 
-        "numeric", "text", "text", "text", 
-        "text", "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "text", "numeric", "text", 
-        "date", "text", "text", "date", "text", 
-        "text", "date", "text", "text", "date", 
-        "text", "text", "date", "text", "text", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "numeric", "numeric", "numeric", 
-        "text", "numeric", "text", "text", 
-        "numeric", "text", "text", "text", 
-        "text", "text", "numeric", "numeric", 
-        "numeric", "date"))
-
-df_readxl <- read_xlsx("data/raw/Epic Supra V.1 mod.xlsx", na = "")
-
-df_openxlsx <- read.xlsx("data/raw/Epic Supra V.1 mod.xlsx", detectDates = TRUE) 
-
-
-```
-
 # Load modified data v2
 ```{r}
 # Переименованы колонки. Добавлен префикс Before_ для группы Präoperativ After_ для группы Postoperativ FUEcho_ для FUEcho.
-# В excel сопоставлены признаки STERBEDAT, LAST_FU и FUEcho_DATUM. Заменены в STERBEDAT unbekannt на даты, которые нашлись в  LAST_FU или FUEcho_DATUM. Заменены в STERBEDAT значения в формате YYYY на формат даты 31.12.YYYY. Item с такими изменениями сохранены во вкладке mod. Оставшиеся unbekannt заменены на пропуски.
-# Исключены признаки , которые после встречи с Муратом не понятно что обозначают.
+# В excel сопоставлены признаки STERBEDAT, LAST_FU и FUEcho_DATUM. 
+# Заменены в STERBEDAT unbekannt на пропуски, т.к. в признаке VERSTORBEN они все закодированы как 1. 
+# Заменены в STERBEDAT значения в формате YYYY на формат даты 31.12.YYYY. Item с такими изменениями сохранены во вкладке mod. Оставшиеся unbekannt заменены на пропуски.
+# Переназначены ячейки столбцов, в которых числя записаны как текст
+# Заменены в числах запятые на точки.
 
 
 df_read_excel <- read_excel("data/raw/Epic_Supra_V_1_mod_2.xlsx", 
@@ -151,14 +38,14 @@ df_read_excel <- read_excel("data/raw/Epic_Supra_V_1_mod_2.xlsx",
         "numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
         "numeric", "text", "numeric", "numeric", 
-        "numeric", "text", "text", "text", 
+        "numeric", "text", "text", "numeric", 
         "text", "numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
         "numeric", "text", "numeric", "text", 
-        "date", "text", "text", "date", "text", 
-        "text", "date", "text", "text", "date", 
-        "text", "text", "date", "text", "text", 
+        "date", "numeric", "text", "date", "numeric", 
+        "text", "date", "numeric", "text", "date", 
+        "numeric", "text", "date", "numeric", "text", 
         "numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
@@ -167,37 +54,56 @@ df_read_excel <- read_excel("data/raw/Epic_Supra_V_1_mod_2.xlsx",
         "numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
         "numeric", "numeric", "numeric", 
-        "text", "numeric", "text", "text", 
-        "numeric", "text", "text", "text", 
-        "text", "text", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", "numeric", 
+        "numeric", "numeric", "numeric", "numeric", 
         "numeric", "date"))
 
 
 ```
 
-# Modify data
+# Data preparation
 ```{r}
-# Удаляем признаки значение которых неизвестно или не нужно в этом исследовании
+# Сопоставляем колонки с датами, которые принимаются за конечную точку. 
+df_followup <- df_read_excel %>% 
+  select(Item, VERSTORBEN, STERBEDAT, LAST_FU, FUEcho_DATUM)
+
+# Исключаем признаки, которые после встречи с Муратом не понятно что обозначают или не потребуются.
 df <- df_read_excel %>% 
   select(-c("FALLNR", "BG_HRHY_R", "RELAKEY", "AK_MOD", "AK_MOD_BEZ", "AK_PROZ", "THG_NR", "LQ", "REOP?":"REOP_EING5"))
 
-# Удаляем все пропущенные значения в колонке UPSIZING
-df <- df %>% 
-  filter(!is.na(UPSIZING))
-
-# Перекодировать значения в колонке GESCHLECHT в 1 и 2. 1 - M, 2 - W
+# Перекодировать значения в колонке GESCHLECHT в 1 и 2. 1 - M, 2 - W. Будет 1 - male 2 - female
 df <- df %>%
   mutate(GESCHLECHT = ifelse(GESCHLECHT == "M", 1, 2))
-# df <- df %>% 
-#   recode(GESCHLECHT, `1` = "M", `2` = "W")
 
-# Округляем BMI до 1 знака после запятой
-df <- df %>% 
-  mutate(BMI = round(BMI, 1))
+# Round all numeric columns
+df <- df %>%
+  mutate_if(is.numeric, round, digits = 2)
+
+# !!!! Потребуется если работать с первичным файлом. В файле mod_2 уже исправлено в excel !!!
+# if column is numeric then replace , to . 
+# df <- df %>% 
+#   mutate_if(is.numeric, ~gsub(",", ".", .x)) %>% 
+#   mutate_if(is.numeric, as.numeric)
+
+  
 
 # Удаляем нулевые значения
-df <- df %>% 
-  filter(BMI != 0)
+# df <- df %>% 
+#   filter(BMI != 0)
+
+# Перекодируем даты из YYYY-MM-DD в DD.MM.YYYY. Проблема - превращает в формат character.
+# df <- df %>% 
+#   mutate(GEBURT = format(as.Date(GEBURT, format = "%Y-%m-%d"), "%d.%m.%Y"))
+# 
+# df <- df %>% 
+#   mutate(STERBEDAT = format(as.Date(STERBEDAT, format = "%Y-%m-%d"), "%d.%m.%Y"))
+# 
+# df <- df %>% 
+#   mutate(OP_DATUM = format(as.Date(OP_DATUM, format = "%Y-%m-%d"), "%d.%m.%Y"))
+# 
+# df <- df %>% 
+#   mutate(FUEcho_DATUM = format(as.Date(FUEcho_DATUM, format = "%Y-%m-%d"), "%d.%m.%Y"))
 
 ```
 
@@ -205,9 +111,6 @@ df <- df %>%
 
 #Diagnosis Data
 ```{r}
-# df <- df_read_excel
-
-
 df %>% 
   diagnose() %>% 
   flextable()
@@ -226,7 +129,7 @@ df %>%
 # Data clearning
 ```{r}
 # Привести к факторам или числам
-factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, NA))}) %>% colnames()
+factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
 factors_list <- c("Item", "GESCHLECHT")
 
 df %>%  mutate(across(
@@ -250,45 +153,31 @@ class(df1$GEBURT)
 df1_no_date <- df1 %>%
   select(-c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, FUEcho_DATUM))
 
-# glimpse(df1)
-
-
-# Convert columns if class is POSIXct or POSIXt to date
-# df %>% 
-#   select(where(is.infinite.POSIXlt)) %>% 
-#   mutate_all(as.Date) -> df1_date
-# 
-# df_date <- as.data.frame(lapply(df1, function(x) ifelse(is.POSIXct(x), as.Date(x), x)))
-
-# df1$GEBURT <- as.Date(df$GEBURT)
-
-# class(df$GEBURT)
-
 
 # Delete columns if more than 50% of values are NA
 df1_no_na_col <- df1_no_date %>% select_if(~sum(!is.na(.))/length(.) >= 0.5)
 
-# Round all numeric columns
-# df1 %>% 
-#   select(where(is.numeric)) %>% 
-#   mutate_all(round, 2) -> df1_num
+
 
 # Сохраняем датафреймы
-write.csv(df_read_excel, "data/interim/df_read_excel.csv", row.names = FALSE)
+write.csv(df_read_excel, "data/interim/df_read_excel.csv", row.names = FALSE) 
 write.csv(df, "data/interim/df.csv", row.names = FALSE)
 write.csv(df1, "data/interim/df1.csv", row.names = FALSE)
 write.csv(df1_no_date, "data/interim/df1_no_date.csv", row.names = FALSE)
 write.csv(df1_no_na_col, "data/interim/df1_no_na_col.csv", row.names = FALSE)
 
 
-# Удаляем лишние датафреймы
-# rm("df_read_excel", "df", "df1", "df1_no_date")
+# Удаляем полностью среду
+rm(list=ls())
 
 ```
 
 
-#Предварительный отчёт
+#Предварительный отчёт dlookr
 ```{r}
+read.csv("data/interim/df1_no_na_col.csv") -> df1_no_na_col
+read.csv("data/interim/df1_no_date.csv") -> df1_no_date
+
 # Отчёт по датафрейму со всеми признаками
 diagnose_web_report(df1_no_date,
                     output_file = "Diagn_df1.html",  
@@ -302,7 +191,10 @@ eda_web_report(df1_no_date,
                subtitle = deparse(substitute(.data))
                )
 
-# Отчёт по датафрейму после удаления признаков, в которых больше 50% пропущенных значений
+#######################################################################################################################
+# Отчёт по датафрейму после удаления признаков, в которых больше 50% пропущенных значений ######
+#######################################################################################################################
+
 diagnose_web_report(df1_no_na_col,
                     output_file = "Diagn_df1_no_na_col.html",  
                     title = "Data Diagnosis",
@@ -317,8 +209,8 @@ eda_web_report(df1_no_na_col,
 
 ```
 
-# Статичные отчёты
-```{r}
+# Статичные отчёты !!! ЕСЛИ НУЖЕН !!!
+```{r eval=FALSE, include=FALSE}
 # Статичтные отчёты Diagos Data
 diagnose_paged_report(df1_no_date,
                       output_format = "html",
@@ -389,7 +281,7 @@ df_new_dist <- dist(df_new_scaled,
                         method = "euclidean"
                         )
 
-as.matrix(df_new_dist)[1:35,1:35]
+as.matrix(df_new_dist)[1:42,1:42]
 
 pheatmap(df_new_scaled, 
          scale = "row", 
@@ -407,8 +299,10 @@ pheatmap(df_new_scaled,
 <!-- Проводим PCA анализ, что бы снизить размерность данных. Сравнить с тем, что порекомендует Охотин объединить. В первую очередь это касается ЭхоКГ. -->
 
 ```{r}
-rm()
-# # Датафрейм  только с удалёнными датами содержит много пропуcков. В итоге удаляются все строки.
+# Удаляем полностью среду
+rm(list=ls())
+
+# Датафрейм  только с удалёнными датами содержит много пропуcков. В итоге удаляются все строки.
 # read.csv("data/interim/df1_no_date.csv") -> df1_no_date
 # 
 # # # Привести к факторам или числам
@@ -419,10 +313,10 @@ rm()
 #   c(all_of(factors_auto), all_of(factors_list)), as.factor
 # )) -> df1_no_date
 # 
-# df1_pca <- df1_no_date %>% 
-#   select(where(is.numeric)) %>% 
+# df1_pca <- df1_no_date %>%
+#   select(where(is.numeric)) %>%
 #   # select(-c(MORTALITAT_TAGE)
-#   mutate_all(round, 1) %>% 
+#   mutate_all(round, 1) %>%
 #   stats::na.omit()
 
 
@@ -437,7 +331,7 @@ df1_no_na_col %>%  mutate(across(
   c(all_of(factors_auto), all_of(factors_list)), as.factor
 )) -> df1_no_na_col
 
-str(df1_no_na_col) # Обязательно проверить присвоение классов. Иногда не срабатывает
+str(df1_no_na_col) # Обязательно проверить присвоение классов. Иногда не срабатывает. Если не сработало - презапустить сессию и запустить этот чанк отдельно.
 
 
 df1_pca <- df1_no_na_col %>% 
@@ -470,17 +364,21 @@ fviz_contrib(df_full.pca, choice = "var", axes = 1, top = 24) # 1
 fviz_contrib(df_full.pca, choice = "var", axes = 2, top = 24) # 2
 fviz_contrib(df_full.pca, choice = "var", axes = 3, top = 24) # 3
 
+
+# PCA с группировкой по UPSIZING
 library(ggbiplot)
 
-df0 <- df1_no_na_col %>% 
+df0 <- df1_no_na_col %>%
   select(c(Item, UPSIZING))
 
 df1_pca2 <- left_join(df1_pca, df0, "Item" )
+
 
 ggbiplot(df_full.pca, 
          scale=0, 
          groups = as.factor(df1_pca2$UPSIZING), 
          ellipse = TRUE,
+         # circle = TRUE,
          alpha = 0.2) +
   theme_minimal()
 
