@@ -176,7 +176,23 @@ rm(list=ls())
 #Предварительный отчёт dlookr
 ```{r}
 read.csv("data/interim/df1_no_na_col.csv") -> df1_no_na_col
+
+
+factors_auto <- df1_no_na_col %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
+factors_list <- c("Item", "GESCHLECHT")
+
+df1_no_na_col %>%  mutate(across(
+  c(all_of(factors_auto), all_of(factors_list)), as.factor
+)) -> df1_no_na_col
+
 read.csv("data/interim/df1_no_date.csv") -> df1_no_date
+
+factors_auto <- df1_no_date %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
+factors_list <- c("Item", "GESCHLECHT")
+
+df1_no_date %>%  mutate(across(
+  c(all_of(factors_auto), all_of(factors_list)), as.factor
+)) -> df1_no_date
 
 # Отчёт по датафрейму со всеми признаками
 diagnose_web_report(df1_no_date,
