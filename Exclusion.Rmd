@@ -1,0 +1,55 @@
+---
+title: "Exclusion Chartflow"
+author: "Dmitrii Zhakota"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# remotes::install_github("stopsack/khsmisc")
+library(khsmisc)
+library(dplyr)
+```
+
+# Load data
+```{r}
+df <- read.csv("data/interim/df_read_excel.csv")
+
+```
+
+# Exclusion Criteria
+```{r}
+# Подсчитывааем сколько исключено пациентов с неизвестной датой смерти
+df1_ex <- df %>% 
+  dplyr::filter(is.na(STERBEDAT)) 
+
+# Подсчитывааем сколько включено в следующий этап критерив исключения
+df1_in <- df %>% 
+  dplyr::filter(!is.na(STERBEDAT))
+
+# Подсчитывааем сколько исключено пациентов с неизвестным значением UPSIZING
+df2_ex <- df1_in %>% 
+  dplyr::filter(is.na(UPSIZING))
+
+# Подсчитывааем сколько включено в следующий этап критерив исключения
+df2_in <- df1_in %>%
+  dplyr::filter(!is.na(UPSIZING))
+
+
+```
+
+# Exclusion Table
+```{r}
+design <- tibble::tribble(
+  ~left,               ~n_left, ~right,              ~n_right,
+  "Study base",        nrow(df),    "Excuded outcome missing data",       nrow(df1_ex),
+  "Study population",  nrow(df1_in),     "Excuded upsizing missing data", nrow(df2_ex),
+  "Complete-case set", nrow(df2_in),     "",                  NA_integer_)
+
+```
+
+# Exclusion Flow Chart
+```{r}
+exclusion_flowchart(design, width = 2)
+```
