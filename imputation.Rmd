@@ -1,0 +1,67 @@
+---
+title: "MICE"
+author: "Dmitrii Zhakota"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(mice)
+library(dlookr)
+library(dplyr)
+# library(tidyverse)
+
+```
+
+# Load data
+```{r}
+df <- read.csv("data/interim/df_read_excel.csv")
+
+```
+
+# Prepare data
+```{r}
+# Привести к факторам или числам
+factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
+factors_list <- c("Item", "GESCHLECHT")
+
+df %>%  mutate(across(
+  c(all_of(factors_auto), all_of(factors_list)), as.factor
+)) -> df1
+
+# Convert columns if class is POSIXct or POSIXt to date
+# df1 <- df1 %>% 
+#   mutate(across(c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, REOP_DAT, REOP_DAT2, REOP_DAT3, REOP_DAT4, REOP_DAT5, FUEcho_DATUM), ~ as.Date(. )))
+
+df1 <- df1 %>% 
+  mutate(across(c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, FUEcho_DATUM), ~ as.Date(. )))
+
+# Надо убрать все даты
+
+# ak_ann <- imputate_na(df1, AK_ANN, GROESSE, method = "mice")
+#  iter imp variable
+#   1   1  STERBEDATОшибка в ranger::ranger(x = xobs, y = yobs, num.trees = ntree) :
+#   Error: Unsupported type of dependent variable.
+  
+```
+
+# MICE
+```{r}
+# Предполагаем значение AK_ANN  по LVOT
+df2 <- df1 %>% 
+  select(GESCHLECHT, GROESSE, GEWICHT, KLSNYHAE, AK_ANN, Befor_LVOT)
+  filter(GROESSE!= 0) %>% 
+  filter(GEWICHT !=0) 
+  
+df3 <- df2 %>% 
+  filter(is.na(AK_ANN)) %>% 
+  filter(!is.na(Befor_LVOT))
+
+upsizing <- imputate_na(df1, BMI, UPSIZING, method = "rpart")
+
+
+ak_ann <- imputate_na(df2, AK_ANN, Befor_LVOT, method = "mice")
+
+plot(upsizing)
+```
