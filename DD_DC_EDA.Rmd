@@ -174,7 +174,7 @@ rm(list=ls())
 
 
 #Предварительный отчёт dlookr
-```{r}
+```{r eval=FALSE, include=FALSE}
 read.csv("data/interim/df1_no_na_col.csv") -> df1_no_na_col
 
 
@@ -265,6 +265,11 @@ eda_paged_report(df1_no_na_col,
 
 
 # Exploratory Data Analysis
+## Descriptive statistics
+```{r}
+
+```
+
 
 ## Clustering
 ```{r}
