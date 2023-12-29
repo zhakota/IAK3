@@ -61,20 +61,36 @@ df_read_excel <- read_excel("data/raw/Epic_Supra_V_1_mod_2.xlsx",
 
 
 ```
+# Rename and Recode
+```{r}
+rename <- read.table(file = 'data/raw/Column_Renamer.tsv', sep = '\t', header = TRUE)
+
+# Convert to vector column English_Column_Name_Short for rename
+English_Column_Name_Short <- as.vector(rename$English_Column_Name_Short)
+
+# Rename columns names in df_read_excel with vector English_Column_Name_Short
+df_en <- df_read_excel %>% 
+  rename_with(~English_Column_Name_Short, everything())
+  
+  
+```
 
 # Data preparation
 ```{r}
 # Сопоставляем колонки с датами, которые принимаются за конечную точку. 
-df_followup <- df_read_excel %>% 
-  select(Item, VERSTORBEN, STERBEDAT, LAST_FU, FUEcho_DATUM)
+# df_followup <- df_read_excel %>% 
+#   select(Item, VERSTORBEN, STERBEDAT, LAST_FU, FUEcho_DATUM)
+
+df_followup <- df_en %>% 
+  select(Case_Num, OS_Event, OS_Date, Last_FU, FUEcho_Date)
 
 # Исключаем признаки, которые после встречи с Муратом не понятно что обозначают или не потребуются.
-df <- df_read_excel %>% 
-  select(-c("FALLNR", "BG_HRHY_R", "RELAKEY", "AK_MOD", "AK_MOD_BEZ", "AK_PROZ", "THG_NR", "LQ", "REOP?":"REOP_EING5"))
+df <- df_en %>% 
+  select(-c("Identifier", "BG_HRHY_R", "RELAKEY", "AK_MOD", "Prosthesis_Name", "AK_PROZ", "THG_NR", "LQ_LQ", "REOP?":"REOP_EING5"))
 
 # Перекодировать значения в колонке GESCHLECHT в 1 и 2. 1 - M, 2 - W. Будет 1 - male 2 - female
 df <- df %>%
-  mutate(GESCHLECHT = ifelse(GESCHLECHT == "M", 1, 2))
+  mutate(Gender = ifelse(Gender == "M", 1, 2))
 
 # Round all numeric columns
 df <- df %>%
@@ -108,8 +124,7 @@ df <- df %>%
 ```
 
 
-
-#Diagnosis Data
+# Diagnosis Data
 ```{r}
 df %>% 
   diagnose() %>% 
@@ -130,7 +145,7 @@ df %>%
 ```{r}
 # Привести к факторам или числам
 factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
-factors_list <- c("Item", "GESCHLECHT")
+factors_list <- c("Case_Num", "Gender")
 
 df %>%  mutate(across(
   c(all_of(factors_auto), all_of(factors_list)), as.factor
@@ -141,9 +156,9 @@ df %>%  mutate(across(
 #   mutate(across(c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, REOP_DAT, REOP_DAT2, REOP_DAT3, REOP_DAT4, REOP_DAT5, FUEcho_DATUM), ~ as.Date(. )))
 
 df1 <- df1 %>% 
-  mutate(across(c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, FUEcho_DATUM), ~ as.Date(. )))
+  mutate(across(c(Birth_Date, OS_Date, Last_FU, Sx_Date, FUEcho_Date), ~ as.Date(. )))
 
-class(df1$GEBURT)
+class(df1$Birth_Date)
 
 
 #Remove columns where date class
@@ -151,26 +166,30 @@ class(df1$GEBURT)
 #   select(-c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, REOP_DAT, REOP_DAT2, REOP_DAT3, REOP_DAT4, REOP_DAT5, FUEcho_DATUM))
 
 df1_no_date <- df1 %>%
-  select(-c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, FUEcho_DATUM))
+  select(-c(Birth_Date, OS_Date, Last_FU, Sx_Date, FUEcho_Date))
 
 
 # Delete columns if more than 50% of values are NA
 df1_no_na_col <- df1_no_date %>% select_if(~sum(!is.na(.))/length(.) >= 0.5)
 
+```
 
-
+# Save data frames to interim folder
+```{r}
 # Сохраняем датафреймы
-write.csv(df_read_excel, "data/interim/df_read_excel.csv", row.names = FALSE) 
-write.csv(df, "data/interim/df.csv", row.names = FALSE)
-write.csv(df1, "data/interim/df1.csv", row.names = FALSE)
-write.csv(df1_no_date, "data/interim/df1_no_date.csv", row.names = FALSE)
-write.csv(df1_no_na_col, "data/interim/df1_no_na_col.csv", row.names = FALSE)
+write.csv(df_read_excel, "data/interim/df_read_excel.csv", row.names = FALSE) # Без изменений после загрузки из excel
+write.csv(df_en, "data/interim/df_en.csv", row.names = FALSE) # Переимнование колонок в English_Column_Name_Short
+write.csv(df, "data/interim/df.csv", row.names = FALSE) # Удаление лишних колонок и перекодировка пола
+write.csv(df1, "data/interim/df1.csv", row.names = FALSE) # Назначены классы признакам (фактор, дата, количественная)
+
+write.csv(df1_no_date, "data/interim/df1_no_date.csv", row.names = FALSE) # Удалены все даты
+write.csv(df1_no_na_col, "data/interim/df1_no_na_col.csv", row.names = FALSE) # Удалены все даты и колонки с NA > 50%
 
 
 # Удаляем полностью среду
 rm(list=ls())
-
 ```
+
 
 
 #Предварительный отчёт dlookr
@@ -179,7 +198,7 @@ read.csv("data/interim/df1_no_na_col.csv") -> df1_no_na_col
 
 
 factors_auto <- df1_no_na_col %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
-factors_list <- c("Item", "GESCHLECHT")
+factors_list <- c("Case_Num", "Gender")
 
 df1_no_na_col %>%  mutate(across(
   c(all_of(factors_auto), all_of(factors_list)), as.factor
@@ -188,7 +207,7 @@ df1_no_na_col %>%  mutate(across(
 read.csv("data/interim/df1_no_date.csv") -> df1_no_date
 
 factors_auto <- df1_no_date %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
-factors_list <- c("Item", "GESCHLECHT")
+factors_list <- c("Case_Num", "Gender")
 
 df1_no_date %>%  mutate(across(
   c(all_of(factors_auto), all_of(factors_list)), as.factor
@@ -268,6 +287,7 @@ eda_paged_report(df1_no_na_col,
 ## Descriptive statistics
 ```{r}
 
+
 ```
 
 
@@ -277,7 +297,7 @@ df <- read.csv("data/interim/df1_no_date.csv")
 
 # Привести к факторам или числам
 factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
-factors_list <- c("GESCHLECHT")
+factors_list <- c("Gender")
 
 df %>%  mutate(across(
   c(all_of(factors_auto), all_of(factors_list)), as.factor
@@ -288,7 +308,7 @@ str(df) # Обязательно проверить присвоение кла�
 
 df_new <- df %>% 
   select(where(is.numeric)) %>% 
-  select(-c(Item)) %>%  # Удаляем Item, так как он не несёт смысловой нагрузки
+  select(-c(Case_Num)) %>%  # Удаляем Item, так как он не несёт смысловой нагрузки
   mutate_all(round, 1)  
   # stats::na.omit()
 
@@ -346,7 +366,7 @@ read.csv("data/interim/df1_no_na_col.csv") -> df1_no_na_col
 
 # Привести к факторам или числам
 factors_auto <- df1_no_na_col %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
-factors_list <- c("GESCHLECHT")
+factors_list <- c("Gender")
 
 df1_no_na_col %>%  mutate(across(
   c(all_of(factors_auto), all_of(factors_list)), as.factor
@@ -390,14 +410,14 @@ fviz_contrib(df_full.pca, choice = "var", axes = 3, top = 24) # 3
 library(ggbiplot)
 
 df0 <- df1_no_na_col %>%
-  select(c(Item, UPSIZING))
+  select(c(Case_Num, Upsizing))
 
-df1_pca2 <- left_join(df1_pca, df0, "Item" )
+df1_pca2 <- left_join(df1_pca, df0, "Case_Num" )
 
 
 ggbiplot(df_full.pca, 
          scale=0, 
-         groups = as.factor(df1_pca2$UPSIZING), 
+         groups = as.factor(df1_pca2$Upsizing), 
          ellipse = TRUE,
          # circle = TRUE,
          alpha = 0.2) +
