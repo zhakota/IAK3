@@ -8,7 +8,11 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(mice)
+#devtools::install_github(repo = "amices/mice")
+library(missRanger)
 library(dlookr)
+library(ggplot2)
+library(ggmice)
 library(dplyr)
 # library(tidyverse)
 
@@ -16,7 +20,7 @@ library(dplyr)
 
 # Load data
 ```{r}
-df <- read.csv("data/interim/df_read_excel.csv")
+df <- read.csv("data/interim/df.csv")
 
 ```
 
@@ -24,44 +28,477 @@ df <- read.csv("data/interim/df_read_excel.csv")
 ```{r}
 # Привести к факторам или числам
 factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
-factors_list <- c("Item", "GESCHLECHT")
+factors_list <- c("Case_Num", "Gender")
 
 df %>%  mutate(across(
   c(all_of(factors_auto), all_of(factors_list)), as.factor
 )) -> df1
 
-# Convert columns if class is POSIXct or POSIXt to date
-# df1 <- df1 %>% 
-#   mutate(across(c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, REOP_DAT, REOP_DAT2, REOP_DAT3, REOP_DAT4, REOP_DAT5, FUEcho_DATUM), ~ as.Date(. )))
-
 df1 <- df1 %>% 
-  mutate(across(c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, FUEcho_DATUM), ~ as.Date(. )))
+  mutate(across(c(Birth_Date, OS_Date, Last_FU, Sx_Date, FUEcho_Date), ~ as.Date(. )))
 
-# Надо убрать все даты
+class(df1$Birth_Date)
 
-# ak_ann <- imputate_na(df1, AK_ANN, GROESSE, method = "mice")
-#  iter imp variable
-#   1   1  STERBEDATОшибка в ranger::ranger(x = xobs, y = yobs, num.trees = ntree) :
-#   Error: Unsupported type of dependent variable.
-  
+
+# Предполагаем значение Prosthesis_Anat_Size по LVOT
+df2 <- df1 %>% 
+  # select(Case_Num, Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Pre_LVOT) %>% 
+  filter(Height != 0) %>% 
+  filter(Weight != 0)
+
+
+# Приводим к одной размерности Prosthesis_Anat_Size и Pre_LVOT
+df2 <- df2 %>% 
+  mutate(Pre_LVOT = ifelse(Pre_LVOT < 10, Pre_LVOT*10, Pre_LVOT))
+
+# смотрим сколько значений в столбце Prosthesis_Anat_Size пропущено и их можно заменить по Pre_LVOT
+df3 <- df2 %>% 
+  # filter(is.na(Prosthesis_Anat_Size)) %>% 
+  filter(!is.na(Pre_LVOT))
+
+
+```
+# Analysis 
+```{r}
+df3 %>% 
+select(Case_Num, Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Upsizing, Pre_LVOT) %>% 
+diagnose_numeric()
+
+df2 %>% 
+select(Case_Num, Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Upsizing, Pre_LVOT) %>% 
+plot_na_pareto()
+
+df3 %>% 
+select(Case_Num, Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Upsizing, Pre_LVOT) %>%  
+plot_na_pareto()
+
+df2 %>% 
+select(Case_Num, Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Upsizing, Pre_LVOT) %>%
+plot_na_intersect()
+
+# Зависят ли пропуски Pre_LVOT от даты операции
+df2 %>%
+  select(c(Pre_LVOT, Sx_Date)) %>% 
+  arrange(Sx_Date)
+
+
+# # Outlier detection Prosthesis_Anat_Size and Pre_LVOT
+# diagnose_outlier(df2, Prosthesis_Anat_Size, Pre_LVOT)
+
+# Prosthesis_Anat_Size_capping <- imputate_outlier(df2, Prosthesis_Anat_Size, method = "capping")
+# Pre_LVOT_capping <- imputate_outlier(df2, Pre_LVOT, method = "capping")
 ```
 
-# MICE
+
+# dlookr imputation
 ```{r}
-# Предполагаем значение AK_ANN  по LVOT
-df2 <- df1 %>% 
-  select(GESCHLECHT, GROESSE, GEWICHT, KLSNYHAE, AK_ANN, Befor_LVOT)
-  filter(GROESSE!= 0) %>% 
-  filter(GEWICHT !=0) 
+df3 %>% 
+select(Case_Num, Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Pre_LVOT) -> df3d
   
-df3 <- df2 %>% 
-  filter(is.na(AK_ANN)) %>% 
-  filter(!is.na(Befor_LVOT))
+# Prosthesis_Anat_Size2r <- imputate_na(df2, Prosthesis_Anat_Size, Pre_LVOT, method = "rpart")
+# Prosthesis_Anat_Size2m <- imputate_na(df2, Prosthesis_Anat_Size, Pre_LVOT, method = "mice")
+# Prosthesis_Anat_Size2k <- imputate_na(df2, Prosthesis_Anat_Size, Pre_LVOT, method = "knn")
 
-upsizing <- imputate_na(df1, BMI, UPSIZING, method = "rpart")
+Prosthesis_Anat_Size3mean <- imputate_na(df3d, Prosthesis_Anat_Size, Pre_LVOT, method = "mean") #Mean
+Prosthesis_Anat_Size3r <- imputate_na(df3d, Prosthesis_Anat_Size, Pre_LVOT, method = "rpart") #Recursive Partitioning and Regression Trees
+Prosthesis_Anat_Size3m <- imputate_na(df3d, Prosthesis_Anat_Size, Pre_LVOT, method = "mice", seed = 123) #Multivariate Imputation by Chained Equations
+Prosthesis_Anat_Size3k <- imputate_na(df3d, Prosthesis_Anat_Size, Pre_LVOT, method = "knn") #k-Nearest Neighbour Imputation
+
+# plot(Prosthesis_Anat_Size2r)
+# plot(Prosthesis_Anat_Size2m)
+# plot(Prosthesis_Anat_Size2k)
+
+plot(Prosthesis_Anat_Size3mean)
+plot(Prosthesis_Anat_Size3r)
+plot(Prosthesis_Anat_Size3m)
+plot(Prosthesis_Anat_Size3k)
+
+View(Prosthesis_Anat_Size3r)
+
+```
+
+# Multivariate Imputation by Chained Equations (MICE)
+```{r eval=FALSE, include=FALSE}
+df3 %>% 
+select(Case_Num, Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Pre_LVOT) -> df4
+
+# Imputation methods
+imp_pmm <- mice(df4, meth = "pmm", seed = 123) # Predictive Mean Matching
+imp_midastouch <- mice(df4, meth = "midastouch", seed = 123) # Weighted predictive mean matching
+imp_sample <- mice(df4, meth = "sample", seed = 123) # Random sample from observed values
+imp_cart <- mice(df4, meth = "cart", seed = 123) # Classification and Regression Trees
+imp_rf <- mice(df4, meth = "rf", seed = 123) # Random Forest  
+imp_mean <- mice(df4, meth = "mean", seed = 123) # Mean
+imp_norm <- mice(df4, meth = "norm", seed = 123) # Bayesian linear regression
+# imp_norm_nob <- mice(df4, meth = "norm.nob", seed = 123) # Linear regression ignoring model error
+# imp_norm_boot <- mice(df4, meth = "norm.boot", seed = 123) # Linear regression using bootstrap
+# imp_norm_predict <- mice(df4, meth = "norm.predict", seed = 123) # Linear regression, predicted values
+imp_lasso.norm <- mice(df4, meth = "lasso.norm", seed = 123) # Lasso linear regression
+imp_lasso.select.norm <- mice(df4, meth = "lasso.select.norm", seed = 123) #  Lasso select + linear regression
+# imp_quadratic <- mice(df4, meth = "quadratic", seed = 123) #  Imputation of quadratic terms
+# imp_ridge <- mice(df4, meth = "ridge", seed = 123) # Random indicator for nonignorable data
 
 
-ak_ann <- imputate_na(df2, AK_ANN, Befor_LVOT, method = "mice")
+mice::anova(as.mira(imp_pmm), method = "D1", use = "wald")
 
-plot(upsizing)
+
+# Compare density plots of imputed data with original data
+mice::densityplot(imp_pmm)
+mice::densityplot(imp_midastouch)
+mice::densityplot(imp_sample)
+mice::densityplot(imp_cart)
+mice::densityplot(imp_rf)
+mice::densityplot(imp_mean)
+mice::densityplot(imp_norm)
+# mice::densityplot(imp_norm_nob)
+# mice::densityplot(imp_norm_boot)
+# mice::densityplot(imp_norm_predict)
+mice::densityplot(imp_lasso.norm)
+mice::densityplot(imp_lasso.select.norm)
+# mice::densityplot(imp_quadratic)
+# mice::densityplot(imp_ridge)
+
+mice::densityplot(imp_pmm, imp_cart, imp_rf, imp_mean)
+
+# Compare boxplots of imputed data with original data
+mice::bwplot(imp_pmm)
+
+
+# Convergence diagnostics
+mice::convergence(imp_rf)
+
+# Imputation diagnostics
+plot(imp_pmm)
+plot(imp_midastouch)
+plot(imp_sample)
+plot(imp_cart)
+plot(imp_rf)
+plot(imp_mean)
+plot(imp_norm)
+# plot(imp_norm_nob)
+# plot(imp_norm_boot)
+# plot(imp_norm_predict)
+plot(imp_lasso.norm)
+plot(imp_lasso.select.norm)
+# plot(imp_quadratic)
+# plot(imp_ridge)
+
+###############################################################################################################
+mice::xyplot(imp_cart, Pre_LVOT ~ Prosthesis_Anat_Size | .imp)
+
+mice::stripplot(imp_cart, Prosthesis_Anat_Size ~ .imp, pch=20, cex=2)
+
+# Extract the imputed data
+mice::complete(imp_cart, action = "long")
+
+mice::complete(imp_cart, action = "stacked") 
+
+mice::complete(imp_cart, action = 0)
+
+#####################################################################################################################
+fit <- with(df, lm(Prosthesis_Anat_Size ~ Age + Gender + Height + Weight + NYHA_Heart_Fail_Class + Pre_LVOT))
+
+fit <- with(df, lm(Age ~ Prosthesis_Anat_Size))
+# summary(pool(fit))
+summary(fit)
+mice::pool(fit)
+
+
+ggmice(df3, aes(x = Prosthesis_Anat_Size, y = Pre_LVOT)) + geom_point()
+ggmice(imp_rf, aes(x = Prosthesis_Anat_Size, y = Pre_LVOT)) + geom_point()
+
+df_rf <- complete(imp_rf) 
+
+densityplot(imp_rf)
+plot(imp_rf)
+
+
+
+fit2 <- with(df_rf, lm(Prosthesis_Anat_Size ~ Age + Gender + Height + Weight + NYHA_Heart_Fail_Class + Pre_LVOT))
+# summary(pool(fit))
+summary(fit2)
+
+
+
+df_cart <- complete(imp_cart)
+
+
+
+mice_compare <- data.frame(Prosthesis_Anat_Size = c(df4$Prosthesis_Anat_Size, df_cart$Prosthesis_Anat_Size),
+                             group = c(rep("original", nrow(df4)), rep("imputation", nrow(MissRander_df3))))
+mice_compare$size <- round(mice_compare$Prosthesis_Anat_Size, 0)
+
+grouped_ggbetweenstats(
+  data = dplyr::filter(mice_compare, size %in% c(21, 22, 23, 24, 25, 26)),
+  x = group,
+  y = Prosthesis_Anat_Size,
+  grouping.var = size,
+  type = "nonparametric",
+  effsize.type = "eta",
+  paired = TRUE,
+  plot.type = "box",
+  plot.points = "jitter",
+  # title = "Prosthesis_Anat_Size",
+  xlab = "",
+  ylab = "",
+  legend.title = "group",
+  ggtheme = theme_minimal()
+)
+
+densityplot(imp_cart)
+ggmice(imp_cart, ggplot2::aes(x = Prosthesis_Anat_Size, group = .imp)) +
+  ggplot2::geom_density()
+```
+
+
+# missRanger
+```{r}
+MissRander_df3 <- missRanger(
+  df3, 
+  formula = Prosthesis_Anat_Size ~ c(Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Pre_LVOT),
+  pmm.k = 3,
+  num.trees = 1000, 
+  verbose = 2, 
+  seed = 123,  
+  returnOOB = TRUE
+  )
+
+# Imputation for Prosthesis_Anat_Size only
+MissRander_df30 <- missRanger(
+  df3, 
+  formula = Prosthesis_Anat_Size ~ c(Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Pre_LVOT),
+  # pmm.k = 3,
+  num.trees = 1000, 
+  verbose = 2, 
+  seed = 123,  
+  returnOOB = TRUE,
+  data_only = FALSE,
+  keep_forests = TRUE
+  )
+
+MissRander_df31 <- missRanger(
+  df3, 
+  formula = Prosthesis_Anat_Size ~ Pre_LVOT,
+  pmm.k = 3,
+  num.trees = 1000, 
+  verbose = 2, 
+  seed = 123,  
+  returnOOB = TRUE,
+  data_only = FALSE,
+  keep_forests = TRUE
+  )
+
+# Imputation for Prosthesis_Anat_Size and Pre_LVOT
+# Prosthesis_Anat_Size_imputet_df2 <- missRanger(
+#   df2, 
+#   formula = . ~ . ,
+#   # pmm.k = 3,
+#   num.trees = 1000, 
+#   verbose = 2, 
+#   seed = 111,  
+#   returnOOB = T)
+
+
+# normality test dlookr
+# plot_normality(MissRander_df3)
+
+# imputation result only for Prosthesis_Anat_Size. Red dots are imputed values.
+ggplot()+
+  geom_point(data = MissRander_df30$data, aes(Prosthesis_Anat_Size, Pre_LVOT), color = "red")+
+  geom_point(data = df3, aes(Prosthesis_Anat_Size, Pre_LVOT), alpha = 0.2)+
+  theme_minimal()
+
+ggplot()+
+  geom_point(data = MissRander_df31$data, aes(Prosthesis_Anat_Size, Pre_LVOT), color = "red")+
+  geom_point(data = df3, aes(Prosthesis_Anat_Size, Pre_LVOT), alpha = 0.2)+
+  theme_minimal()
+
+# imputation result for Prosthesis_Anat_Size and Pre_LVOT
+# ggplot()+
+#   geom_point(data = Prosthesis_Anat_Size_imputet_df2, aes(Prosthesis_Anat_Size, Pre_LVOT), 
+#              color = "red")+
+#   geom_point(data = df2, aes(Prosthesis_Anat_Size, Pre_LVOT))+
+#   theme_minimal()
+
+
+# Density plot for Prosthesis_Anat_Size df3 and MissRander_df3
+# densityplot(df3$Prosthesis_Anat_Size)
+# densityplot(MissRander_df3$Prosthesis_Anat_Size)
+
+MissRander_df30$pred_errors[MissRander_df30$best_iter, "Prosthesis_Anat_Size"] # 1 - R-squared
+MissRander_df30$forests$Prosthesis_Anat_Size
+MissRander_df30$pred_errors
+
+MissRander_df31$pred_errors[MissRander_df31$best_iter, "Prosthesis_Anat_Size"] # 1 - R-squared
+MissRander_df31$forests$Prosthesis_Anat_Size
+MissRander_df31$pred_errors
+
+
+```
+
+# Compare original and imputation
+```{r}
+# Create new dataframe Prosthesis_Anat_Size_compare whith two columns AK_NN and group. Select Prosthesis_Anat_Size from df3. Put in  Prosthesis_Anat_Size_compare and mark like group original. Select Prosthesis_Anat_Size from MissRander_df3 and put in  Prosthesis_Anat_Size_compare and mark like group imputet.
+Prosthesis_Anat_Size_compare <- data.frame(Prosthesis_Anat_Size = c(df3$Prosthesis_Anat_Size, MissRander_df3$Prosthesis_Anat_Size),
+                             group = c(rep("original", nrow(df3)), rep("imputation", nrow(MissRander_df3))))
+# Add column size in Prosthesis_Anat_Size_compare. Copy values from Prosthesis_Anat_Size_compare$Prosthesis_Anat_Size to Prosthesis_Anat_Size_compare$size. Round to 0 decimal places.
+Prosthesis_Anat_Size_compare$size <- round(Prosthesis_Anat_Size_compare$Prosthesis_Anat_Size, 0)
+Prosthesis_Anat_Size_compare$Prosthesis_Anat_Size <- round(Prosthesis_Anat_Size_compare$Prosthesis_Anat_Size, 0)
+
+####################################################################
+Prosthesis_Anat_Size_compare31 <- data.frame(Prosthesis_Anat_Size = c(df3$Prosthesis_Anat_Size, MissRander_df31$data$Prosthesis_Anat_Size),
+                             group = c(rep("original", nrow(df3)), rep("imputation", nrow(MissRander_df31$data))))
+# Add column size in Prosthesis_Anat_Size_compare. Copy values from Prosthesis_Anat_Size_compare$Prosthesis_Anat_Size to Prosthesis_Anat_Size_compare$size. Round to 0 decimal places.
+Prosthesis_Anat_Size_compare$size <- round(Prosthesis_Anat_Size_compare$Prosthesis_Anat_Size, 0)
+Prosthesis_Anat_Size_compare$Prosthesis_Anat_Size <- round(Prosthesis_Anat_Size_compare$Prosthesis_Anat_Size, 0)
+############################################################################
+
+plot_normality(Prosthesis_Anat_Size_compare)
+
+library(ggstatsplot)
+# Сравние группы original и imputation в общем
+ggbetweenstats(
+  data = Prosthesis_Anat_Size_compare,
+  x = group,
+  y = Prosthesis_Anat_Size,
+  type = "nonparametric",
+  effsize.type = "eta",
+  paired = TRUE,
+  plot.type = "box",
+  plot.points = "jitter",
+  title = "Prosthesis_Anat_Size",
+  xlab = "",
+  ylab = "Anatomic size of the aortic valve",
+  legend.title = "group",
+  ggtheme = theme_minimal()
+)
+
+# 
+# Prosthesis_Anat_Size_compare %>% 
+#   # group_by(size) %>%
+#   dplyr::filter(group == "original") %>%
+#   # dplyr::filter(!is.na(size)) %>% 
+#   # dplyr::filter(size == 23) %>% 
+#   normality(Prosthesis_Anat_Size)
+# 
+# Prosthesis_Anat_Size_compare %>% 
+#   # group_by(size) %>%
+#   dplyr::filter(group == "imputation") %>%
+#   # dplyr::filter(!is.na(size)) %>% 
+#   # dplyr::filter(size == 23) %>% 
+#   normality(Prosthesis_Anat_Size)  
+
+# Сравние группы original и imputation по размеру протеза. Вменение было только для размеров от 21 до 26. Сравниваем для каждого размера группы original и imputation.
+ grouped_ggbetweenstats(
+  data = Prosthesis_Anat_Size_compare,
+  # data = dplyr::filter(Prosthesis_Anat_Size_compare, size %in% c(21, 22, 23, 24, 25, 26)),
+  x = group,
+  y = Prosthesis_Anat_Size,
+  grouping.var = size,
+  type = "nonparametric",
+  effsize.type = "eta",
+  paired = TRUE,
+  plot.type = "box",
+  plot.points = "jitter",
+  # title = "Prosthesis_Anat_Size",
+  xlab = "",
+  ylab = "Anatomic size of the aortic valve",
+  legend.title = "group",
+  ggtheme = theme_minimal()
+)
+
+# Prosthesis_Anat_Size_compare %>% 
+#   dplyr::filter(!is.na(size)) %>%
+#   dplyr::filter(size == 25) -> t25
+#   t.test(Prosthesis_Anat_Size ~ group, data = t25)
+#  
+# # t.test for Prosthesis_Anat_Size_compare for each size in group original and imputation
+#  
+# t.test(Prosthesis_Anat_Size ~ group, data = Prosthesis_Anat_Size_compare)
+  
+
+# Связь между Prosthesis_Anat_Size и Pre_LVOT
+ggscatterstats(
+  data = df2,
+  x = Prosthesis_Anat_Size,
+  y = Pre_LVOT,
+  title = "Связь между анатомическим и ЭхоКГ размерамим аортального клапана",
+  xlab = "Анатомический диаметр клапана во время операции (мм)",
+  ylab = "ЭхоКГ диаметр клапана (LVOT) до операции (мм)",
+  # legend.title = "group",
+  ggtheme = theme_minimal()
+)  
+
+ggscatterstats(
+  data = MissRander_df30$data,
+  x = Prosthesis_Anat_Size,
+  y = Pre_LVOT,
+  title = "Связь между анатомическим и ЭхоКГ размерамим аортального клапана",
+  xlab = "Анатомический диаметр клапана во время операции (мм)",
+  ylab = "ЭхоКГ диаметр клапана (LVOT) до операции (мм)",
+  # legend.title = "group",
+  ggtheme = theme_minimal()
+)  
+
+# Dencyty plot for Prosthesis_Anat_Size (original) and MissRander_df3 (imputet). Multvariate imputation.
+ggplot(data = Prosthesis_Anat_Size_compare, aes(Prosthesis_Anat_Size, color = group)) +
+  geom_density() +
+  theme_minimal()
+
+# Dencyty plot for Prosthesis_Anat_Size (original) and MissRander_df31 (imputet). Univariate imputation.
+ggplot(data = Prosthesis_Anat_Size_compare31, aes(Prosthesis_Anat_Size, color = group)) +
+  geom_density() +
+  theme_minimal()
+```
+
+# Combine imputation and original data
+```{r}
+MissRander_df3_merge <- MissRander_df3
+
+MissRander_df3_merge %>% 
+  select(Prosthesis_Size, Prosthesis_Anat_Size, Upsizing, Pre_LVOT) %>% 
+  plot_na_pareto()
+
+# If value in column Prosthesis_Anat_Size is less value Prosthesis_Size, then put value 1 in column Upsizing, else put value 0.
+MissRander_df3_merge$Upsizing <- ifelse(MissRander_df3_merge$Prosthesis_Size > MissRander_df3_merge$Prosthesis_Anat_Size, 1, 0)
+
+# MissRander_df3_merge$Upsizing as factor
+MissRander_df3_merge$Upsizing <- as.factor(MissRander_df3_merge$Upsizing)
+
+df1_merg <- df1
+
+df1_merg %>% 
+select(Prosthesis_Size, Prosthesis_Anat_Size, Upsizing, Pre_LVOT) %>% 
+plot_na_pareto()
+
+# Merge MissRander_df3_merge and df1_merg in new data frame df_imput. Use full_join function
+# If value in column Case_Num is equal, then keep row from MissRander_df3_merge. Keep other rows from df1_merg.
+df_imput <- full_join(MissRander_df3_merge, df1_merg)
+  
+
+# Delete row if duplicate value in column Case_Num and Prosthesis_Anat_Size is NA
+df_imput <- df_imput %>% 
+  dplyr::filter(!(duplicated(Case_Num)))
+
+# How many rows duplicate in df_imput
+df_imput %>% 
+  unique() %>% 
+  nrow()
+
+
+
+df_imput %>% 
+select(Prosthesis_Size, Prosthesis_Anat_Size, Upsizing, Pre_LVOT) %>% 
+plot_na_pareto()
+
+df_imput %>% 
+select(Prosthesis_Size, Prosthesis_Anat_Size, Upsizing, Pre_LVOT) %>% 
+plot_na_intersect()
+
+
+```
+
+# Save data frane with imputation
+```{r}
+write.csv(df_imput, "data/interim/df_imput.csv", row.names = FALSE)
 ```
