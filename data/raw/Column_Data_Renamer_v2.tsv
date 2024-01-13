@@ -1,0 +1,11 @@
+German_Column_Name	English_Column_Name_Long	English_Column_Name_Short	English_Column_Name_Long_Upper	English_Column_Name_Short_Upper
+Item	Case_Number	Case_Num	CASE_NUMBER	CASE_NUM
+GEBURT	Birth_Date	Birth_Date	BIRTH_DATE	BIRTH_DATE
+STERBEDAT	OS_Date	OS_Date	OS_DATE	OS_DATE
+STERBEDAT_unbekant	OS_Date_unknown	OS_Date_unknown	OS_DATE_UNKNOWN	OS_DATE_UNKNOWN
+STERBEDAT_only_year	OS_Date_only_year	OS_Date_Y	OS_DATE_YEAR	OS_DATE_Y
+LAST_FU	Last_Follow_Up	Last_FU	LAST_FOLLOW_UP	LAST_FU
+LAST_FU_only_year	Last_Follow_Up_only_year	Last_FU_Y	LAST_FU_YEAR	LAST_FU_Y
+OP_DATUM	Surgery_Date	Sx_Date	SURGERY_DATE	SX_DATE
+REOP_DAT	REOP_DAT	REOP_DAT	REOP_DAT	REOP_DAT
+FUEcho_DATUM	FUEcho_Date	FUEcho_Date	FUECHO_DATE	FUECHO_DATE
