@@ -14,27 +14,27 @@ library(dplyr)
 
 # Load data
 ```{r}
-df <- read.csv("data/interim/df_read_excel.csv")
+df <- read.csv("data/interim/df1.csv")
 
 ```
 
 # Exclusion Criteria
 ```{r}
-# Подсчитывааем сколько исключено пациентов с неизвестной датой смерти
+# Подсчитывааем сколько исключено пациентов с неизвестной датой follow-up
 df1_ex <- df %>% 
-  dplyr::filter(is.na(STERBEDAT)) 
+  dplyr::filter(is.na(Last_FU)) 
 
 # Подсчитывааем сколько включено в следующий этап критерив исключения
 df1_in <- df %>% 
-  dplyr::filter(!is.na(STERBEDAT))
+  dplyr::filter(!is.na(Last_FU))
 
 # Подсчитывааем сколько исключено пациентов с неизвестным значением UPSIZING
 df2_ex <- df1_in %>% 
-  dplyr::filter(is.na(UPSIZING))
+  dplyr::filter(is.na(Upsizing))
 
 # Подсчитывааем сколько включено в следующий этап критерив исключения
 df2_in <- df1_in %>%
-  dplyr::filter(!is.na(UPSIZING))
+  dplyr::filter(!is.na(Upsizing))
 
 
 ```
