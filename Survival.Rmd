@@ -17,6 +17,7 @@ library(flextable)
 library(gtsummary)
 library(pec)
 library(car)
+
 ```
 
 ```{r}
@@ -148,17 +149,22 @@ df_filter <- df_filter %>%
 
 summary(df_filter$DUR)
 df_filter$DUR
+
+summary(df_filter$Sx_Aort_Clamp_t)
 ```
 Теперь посмотрим на пациентов которые попали в анализ
 ```{r}
 str(df_filter)
+write.csv(df_filter, "data/interim/df_filter_surv.csv", row.names = FALSE) # Без изменений после загрузки из excel
 ```
 
 
 ```{r}
-df_sur_all <- df_filter %>% 
-  select("Case_Num", "Age", "BMI", "Gender", "STS", "Prosthesis_Anat_Aort_Valve", "Pre_Bicuspid", "Prosthesis_Anat_Size", "Sx_Date", "Upsizing", "OS_Event", "DUR") %>% 
-  mutate(Prosthesis_Anat_Size = as.numeric(Prosthesis_Anat_Size))
+df_surv_all <- df_filter %>% 
+  select("Case_Num", "Age", "BMI", "Gender", "STS", "Prosthesis_Anat_Aort_Valve",
+         "Pre_Bicuspid", "Prosthesis_Anat_Size", "Sx_Date", "Upsizing", "OS_Event", "Sx_Aort_Clamp_t", "DUR") %>% 
+  mutate(Prosthesis_Anat_Size = as.numeric(Prosthesis_Anat_Size),
+         Sx_Aort_Clamp_t = if_else(Sx_Aort_Clamp_t == 0, median(Sx_Aort_Clamp_t), Sx_Aort_Clamp_t))
 ```
 Посмотрим на всех вместе
 
@@ -178,10 +184,10 @@ df_surv_all %>%
 
 ```{r}
 df_surv_known <- df_filter %>% 
-  select("Case_Num", "Age", "BMI", "Gender", "NYHA_Heart_Fail_Class", "STS", "Prosthesis_Anat_Aort_Valve", "Pre_Bicuspid", "Prosthesis_Anat_Size", "Sx_Date", "Upsizing", "OS_Event", "DUR") %>% 
+  select("Case_Num", "Age", "BMI", "Gender", "NYHA_Heart_Fail_Class", "STS", "Prosthesis_Anat_Aort_Valve", "Pre_Bicuspid", "Prosthesis_Anat_Size", "Sx_Date", "Upsizing", "OS_Event", "DUR", "Sx_Aort_Clamp_t") %>% 
   mutate(Prosthesis_Anat_Size = as.numeric(Prosthesis_Anat_Size),
-         Upsizing = if_else(Upsizing == "NA", NA, Upsizing),
-         Upsizing = as.factor(Upsizing)) %>% 
+         Upsizing = as.factor(if_else(Upsizing == "NA", NA, Upsizing)),
+         Sx_Aort_Clamp_t = if_else(Sx_Aort_Clamp_t == 0, median(Sx_Aort_Clamp_t), Sx_Aort_Clamp_t)) %>% 
   filter(!is.na(Upsizing))
 
 df_surv_known %>% 
@@ -262,10 +268,158 @@ ggpairs(df_surv_known %>% select(-Case_Num, -DUR),
 ```
 
 ```{r}
-fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date + Upsizing,
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date + Sx_Aort_Clamp_t + Prosthesis_Anat_Size + Upsizing,
                    data = df_surv_known)
 
-fit_covariance2 <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date,
+fit_covariance2 <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date + Prosthesis_Anat_Size + Sx_Aort_Clamp_t,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+cox.zph(fit_covariance)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+
+anova(fit_covariance, fit_covariance2)
+```
+
+```{r}
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Aort_Clamp_t + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size + Sx_Aort_Clamp_t,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+cox.zph(fit_covariance)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+
+anova(fit_covariance, fit_covariance2)
+```
+```{r}
+df_surv_known <- df_surv_known %>% 
+  mutate(NYHA_Heart_Fail_Class_ = if_else(as.numeric(NYHA_Heart_Fail_Class) < 2, "0, 1", "2-4"))
+
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size*Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+cox.zph(fit_covariance)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+
+anova(fit_covariance, fit_covariance2)
+```
+```{r}
+df_surv_known <- df_surv_known %>% 
+  mutate(NYHA_Heart_Fail_Class_ = if_else(as.numeric(NYHA_Heart_Fail_Class) < 2, "0, 1", "2-4"))
+
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + NYHA_Heart_Fail_Class_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size + log10(STS+1)*Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+cox.zph(fit_covariance)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+
+anova(fit_covariance, fit_covariance2)
+```
+
+```{r}
+fit_covariance <- coxph(surv_object ~  Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date + Sx_Aort_Clamp_t + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~  Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date + Sx_Aort_Clamp_t + Prosthesis_Anat_Size,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+
+cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+anova(fit_covariance, fit_covariance2)
+ggcoxdiagnostics(fit_covariance, type = c("martingale"))
+ggcoxdiagnostics(fit_covariance, type = c("deviance"))
+ggcoxdiagnostics(fit_covariance, type = c("score"))
+ggcoxdiagnostics(fit_covariance, type = c("schoenfeld"))
+ggcoxdiagnostics(fit_covariance, type = c("dfbeta"))
+ggcoxdiagnostics(fit_covariance, type = c("dfbetas"))
+ggcoxdiagnostics(fit_covariance, type = c("scaledsch"))
+# ggcoxdiagnostics(fit_covariance, type = c("partial"))
+ggcoxdiagnostics(fit_covariance, type = "dfbetas", point.size = 0, hline.col = "black",
+sline.col = "black") + geom_bar(stat = "identity")
+```
+
+
+s.res <- residuals(fit_covariance, type = "score")
+ld <- diag(s.res %*% fit_covariance$var %*% t(s.res))
+lhd <- data.frame(ObservationID = 1:nrow(df_surv_known), LD = ld)
+qplot(x = ObservationID, y = LD, data = lhd, geom = "point", ylab = "Likelihood Displacement",
+xlab = "Observation ID", size = I(0.3)) + geom_bar(stat = "identity")
+
+
+```{r}
+df_surv_known <- df_surv_known %>% 
+  mutate(Age_ = if_else(Age < 70, "< 70", "70+"),
+         BMI_ = if_else(BMI < 30, "< 30", "30+"),
+         NYHA_Heart_Fail_Class_ = if_else(as.numeric(NYHA_Heart_Fail_Class) < 2, "0, 1", "2-4"),
+         STS_ = if_else(STS < 3, "< 3", "3+"),
+         Prosthesis_Anat_Size_ = if_else(Prosthesis_Anat_Size < 26, "< 26", "26+"),
+         Sx_Aort_Clamp_t_ = if_else(Sx_Aort_Clamp_t < 70, "< 70", "70+"))
+
+surv_object <- Surv(time = df_surv_known$DUR, event = df_surv_known$OS_Event)
+
+fit_covariance <- coxph(surv_object ~ + Age_ + BMI_ + Gender + STS_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size_ + Sx_Aort_Clamp_t_ + Upsizing,
+                   data = as.data.frame(df_surv_known))
+
+cox.zph(fit_covariance)
+ggforest(fit_covariance)
+```
+
+```{r}
+haz <- fitSmoothHazard(OS_Event ~ ns(DUR, df = 3) + log10(STS+1) + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known, time = "DUR")
+
+gg_object <- plot(haz,
+                  hazard.params = list(xvar = "DUR",
+                                       by = "Upsizing",
+                                       alpha = 0.20, # 80% CI
+                                       ylab = "Hazard",
+                                       gg = TRUE)) 
+gg_object +
+  theme_bw()
+```
+
+
+```{r}
+fit_covariance <- coxph(surv_object ~ log10(STS + 1) + Prosthesis_Anat_Aort_Valve + Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~ log10(STS + 1) + Prosthesis_Anat_Aort_Valve,
                    data = df_surv_known)
 
 tbl_regression(fit_covariance, exp = TRUE)
@@ -274,30 +428,10 @@ test.ph <- cox.zph(fit_covariance)
 ggcoxzph(test.ph)
 concordance(fit_covariance)
 vif(fit_covariance)
-
 anova(fit_covariance, fit_covariance2)
-```
-
-```{r}
-fit_covariance <- coxph(surv_object ~ + Age + BMI + Gender + log10(STS + 1) + Prosthesis_Anat_Aort_Valve + Upsizing,
-                   data = df_surv_known)
-
-fit_covariance2 <- coxph(surv_object ~ + Age + BMI + Gender + log10(STS + 1) + Prosthesis_Anat_Aort_Valve,
-                   data = df_surv_known)
-
-tbl_regression(fit_covariance, exp = TRUE)
-
-test.ph <- cox.zph(fit_covariance)
-ggcoxzph(test.ph)
-concordance(fit_covariance)
-vif(fit_covariance)
-anova(fit_covariance, fit_covariance2)
-```
-
-```{r}
-
 
 ```
+
 ```{r}
 #library(glmnet)
 
@@ -329,7 +463,9 @@ test.ph <- cox.zph(fit_covariance)
 ggcoxzph(test.ph)
 ```
 
-```{r}
+
+
+## Старый код
 cox_model <- coxph(Surv(time = df_date_surv$DUR, event = df_date_surv$OS_Event) ~ ALTER_OP + AK_ANN + After_MPG,
                    data = df_date_surv)
 
@@ -338,10 +474,9 @@ tbl_regression(cox_model, exp = TRUE, label = list(ALTER_OP ~ "Возраст", 
 test.ph <- cox.zph(cox_model)
 ggcoxzph(test.ph)
 
-# cindex(object = cox_model, Surv(time = df_date_surv$DUR, event = df_date_surv$OS_Event) ~ Upsizing, data = df_date_surv)
-```
+cindex(object = cox_model, Surv(time = df_date_surv$DUR, event = df_date_surv$OS_Event) ~ Upsizing, data = df_date_surv)
 
-```{r}
+
 df_date_surv <- df_date_surv %>% 
   mutate(MPG_delta = After_MPG - as.numeric(Befor_MPG),
          Befor_MPG = as.numeric(Befor_MPG))  %>% 
@@ -361,5 +496,5 @@ ggplot(df_date_surv, aes(x = AK_ANN, y = After_MPG, col = Upsizing)) +
   xlim(19, 32) +
   geom_smooth() +
   theme_classic2()
-```
+
 
