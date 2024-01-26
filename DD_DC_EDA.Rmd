@@ -12,6 +12,8 @@ library(readxl)
 library(dlookr)
 # library(dplyr)
 library(flextable)
+library(ggstatsplot)
+
 library(tidyverse)
 ```
 
@@ -59,8 +61,24 @@ df_read_excel <- read_excel("data/raw/Epic_Supra_V_1_mod_2.xlsx",
         "numeric", "numeric", "numeric", "numeric", 
         "numeric", "date"))
 
+Epic_Supra_dates_v2 <- read_excel("data/raw/Epic_Supra_dates_v2.xlsx")
 
 ```
+
+# Replace date columns
+```{r}
+# Copy and replace columns from Epic_Supra_dates_v2 to df_read_excel
+df <- df_read_excel
+df$LAST_FU <- Epic_Supra_dates_v2$LAST_FU
+df$FUEcho_DATUM <- Epic_Supra_dates_v2$FUEcho_DATUM
+df$STERBEDAT <- Epic_Supra_dates_v2$STERBEDAT
+# df$STERBEDAT_unbekant <- Epic_Supra_dates_v2$STERBEDAT_unbekant
+# df$STERBEDAT_only_year <- Epic_Supra_dates_v2$STERBEDAT_only_year
+# df$LAST_FU_only_year <- Epic_Supra_dates_v2$LAST_FU_only_year
+
+```
+
+
 # Rename and Recode
 ```{r}
 rename <- read.table(file = 'data/raw/Column_Renamer.tsv', sep = '\t', header = TRUE)
@@ -69,7 +87,7 @@ rename <- read.table(file = 'data/raw/Column_Renamer.tsv', sep = '\t', header = 
 English_Column_Name_Short <- as.vector(rename$English_Column_Name_Short)
 
 # Rename columns names in df_read_excel with vector English_Column_Name_Short
-df_en <- df_read_excel %>% 
+df_en <- df %>% 
   rename_with(~English_Column_Name_Short, everything())
   
   
@@ -84,9 +102,8 @@ df_en <- df_read_excel %>%
 df_followup <- df_en %>% 
   select(Case_Num, OS_Event, OS_Date, Last_FU, FUEcho_Date)
 
-# Исключаем признаки, которые после встречи с Муратом не понятно что обозначают или не потребуются.
-df <- df_en %>% 
-  select(-c("Identifier", "BG_HRHY_R", "RELAKEY", "AK_MOD", "Prosthesis_Name", "AK_PROZ", "THG_NR", "LQ_LQ", "REOP?":"REOP_EING5"))
+# Common rename df.
+df <- df_en
 
 # Перекодировать значения в колонке GESCHLECHT в 1 и 2. 1 - M, 2 - W. Будет 1 - male 2 - female
 df <- df %>%
@@ -180,7 +197,7 @@ df1_no_na_col <- df1_no_date %>% select_if(~sum(!is.na(.))/length(.) >= 0.5)
 write.csv(df_read_excel, "data/interim/df_read_excel.csv", row.names = FALSE) # Без изменений после загрузки из excel
 write.csv(df_en, "data/interim/df_en.csv", row.names = FALSE) # Переимнование колонок в English_Column_Name_Short
 write.csv(df, "data/interim/df.csv", row.names = FALSE) # Удаление лишних колонок и перекодировка пола
-write.csv(df1, "data/interim/df1.csv", row.names = FALSE) # Назначены классы признакам (фактор, дата, количественная)
+write.csv(df1, "data/interim/df1.csv", row.names = FALSE) # Назначены классы признакам (фактор, дата, количественный)
 
 write.csv(df1_no_date, "data/interim/df1_no_date.csv", row.names = FALSE) # Удалены все даты
 write.csv(df1_no_na_col, "data/interim/df1_no_na_col.csv", row.names = FALSE) # Удалены все даты и колонки с NA > 50%
@@ -192,7 +209,7 @@ rm(list=ls())
 
 
 
-#Предварительный отчёт dlookr
+#Pre-report EDA in dlookr
 ```{r eval=FALSE, include=FALSE}
 read.csv("data/interim/df1_no_na_col.csv") -> df1_no_na_col
 
@@ -244,7 +261,7 @@ eda_web_report(df1_no_na_col,
 
 ```
 
-# Статичные отчёты !!! ЕСЛИ НУЖЕН !!!
+# Static report in dlookr !!! OPTION !!!
 ```{r eval=FALSE, include=FALSE}
 # Статичтные отчёты Diagos Data
 diagnose_paged_report(df1_no_date,
@@ -286,13 +303,102 @@ eda_paged_report(df1_no_na_col,
 # Exploratory Data Analysis
 ## Descriptive statistics
 ```{r}
+rm(list=ls())
+
+df <- read.csv("data/interim/df1.csv")
+
+# Привести к факторам или числам
+factors_auto <- df %>% select_if(function(x) {all(unique(x) %in% c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, NA))}) %>% colnames()
+factors_list <- c("Case_Num", "Gender")
+
+df %>%  mutate(across(
+  c(all_of(factors_auto), all_of(factors_list)), as.factor
+)) -> df
+
+# Convert columns if class is POSIXct or POSIXt to date
+# df1 <- df1 %>% 
+#   mutate(across(c(GEBURT, STERBEDAT, LAST_FU, OP_DATUM, REOP_DAT, REOP_DAT2, REOP_DAT3, REOP_DAT4, REOP_DAT5, FUEcho_DATUM), ~ as.Date(. )))
+
+df <- df %>% 
+  mutate(across(c(Birth_Date, OS_Date, Last_FU, Sx_Date, FUEcho_Date), ~ as.Date(. )))
+
+# df1 <- df %>% 
+#   dplyr::filter(!is.na(Last_FU)) 
+
+df1 <- df %>% 
+  mutate(Gender = recode(Gender, '1' = "Male", '2' = "Female")) %>% 
+  mutate(Upsizing = recode(Upsizing, '0' = "Without upsizing", '1' = "With upsizing"))
+
+#####################################################################################################
+# Count of follow-ups by year
+ggplot(df1, aes(x = Last_FU)) +
+  geom_histogram(binwidth = 365) +
+  scale_x_date(date_breaks = "1 year", date_labels = "%Y") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Count genger by upsizing
+ggbarstats(data = df1,
+               x = Gender,
+               y = Upsizing
+)
+
+# Count Gender by STS
+ggbetweenstats(data = df1,
+               x = Gender,
+               y = STS
+)
+
+
+grouped_ggbetweenstats(data = df1,
+               x = Gender,
+               y = STS,
+               grouping.var = Upsizing
+)
+
+# Count Gender by Age
+ggbetweenstats(data = df1,
+               x = Gender,
+               y = Age
+)
+
+
+grouped_ggbetweenstats(data = df1,
+               x = Gender,
+               y = Age,
+               grouping.var = Upsizing
+)
+
+
+  ggbarstats(data = df1,
+               x = Upsizing,
+               y = Sx_Urgency
+)
+
+
+grouped_ggbarstats(data = df1,
+               x = Gender,
+               y = Sx_Urgency,
+               grouping.var = Upsizing
+)
+
+
+grouped_ggbetweenstats(data = df1,
+                       x = Upsizing,
+                       y = Sx_Aort_Clamp_t,
+                       grouping.var = Gender,
+                       ylab = "Aortic clamp time (min)",
+)
+
 
 
 ```
 
 
+
 ## Clustering
 ```{r}
+rm(list = ls())
 df <- read.csv("data/interim/df1_no_date.csv")
 
 # Привести к факторам или числам
