@@ -1,0 +1,711 @@
+---
+title: "Analysis of echo parameters and others"
+author: "Filimonova Irina"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+library(readxl)
+library(tidyverse)
+library(GGally)
+library(ggcorrplot)
+library(pheatmap)
+library(factoextra)
+library(scales)
+library(rstatix)
+library(ggpubr)
+library(ggfortify)
+library(car)
+library(flextable)
+library(sandwich)
+library(gtsummary)
+library(lmtest)
+library(gt)
+library(modelsummary)
+```
+
+```{r}
+df1_no_date <- read.csv("data/interim/df1_no_date.csv")
+```
+
+# Correlation analysis
+
+```{r}
+df1_no_date <- df1_no_date %>% 
+  mutate(Upsizing_num = if_else(Prosthesis_Size>Prosthesis_Anat_Size, Prosthesis_Size - Prosthesis_Anat_Size, if_else(Prosthesis_Size <= Prosthesis_Anat_Size, 0, NA))) 
+
+# Percentage of missing values
+#df1_no_date %>% 
+# map(\(x) sum(is.na(x))/length(x))
+
+# Delete columns if more than 50% of values are NA
+df1_no_na_col <- df1_no_date %>% select(where(\(x) sum(!is.na(x))/length(x) >= 0.5))
+
+Pre_MPG <- df1_no_date$Pre_MAVG_MPG
+
+df1_no_na_col_MPG<- cbind(df1_no_na_col, Pre_MPG)
+```
+
+
+```{r}
+cleaned_data_num <- df1_no_na_col_MPG |>
+              select("Age", "Height", "Weight" , "BMI", "STS", "Sx_Duration_Min",  "Sx_Cardiopulm_Bypass_t", "Sx_Aort_Clamp_t", "Pre_LVEF", "Upsizing_num" , "Pre_MPG")
+
+
+# Visualization
+plot_cor <- ggcorrplot(cor(cleaned_data_num %>% 
+              drop_na()), tl.cex = 11)
+plot_cor
+
+ggsave("data/pics/plot_cor.png", plot_cor, dpi = 200, width = 6, height = 4)
+```
+
+
+# Additional graphs for EDA
+
+```{r}
+df1 <- read_csv("data/interim/df1.csv")
+df1 <- df1 %>% 
+  mutate(Year_sx_date = year(Sx_Date)) %>% 
+  mutate(across(c(Upsizing, OS_Event), \(x) fct_recode(factor(x), 
+                                                      "No" = "0",
+                                                      "Yes" = "1")))
+
+ 
+
+```
+
+Bar plot of pattern over the years of replacement of aortic valve
+
+```{r}
+ggplot(df1, aes(x = Year_sx_date, fill =Upsizing)) +
+  geom_bar(position = "dodge") +
+  labs(x = "Year",
+       y = "Count") +
+  scale_x_continuous(breaks = seq(2011, 2021, 1)) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 14, hjust = 0.5),
+        axis.title = element_text(face = 'bold'),
+        axis.text.x = element_text(angle= 90 , vjust= 0.5 , hjust= 1 ))
+
+```
++ percent of operations
+
+```{r}
+ggplot(df1, aes(x = Year_sx_date, fill =Upsizing)) +
+  geom_bar(position = "fill") +
+  labs( x = "Year",
+       y = "Percent") +
+  scale_x_continuous(breaks = seq(2011, 2021, 1)) +
+  scale_y_continuous(labels = percent) +
+  theme_bw() +
+  theme(plot.title = element_text(size = 14, hjust = 0.5),
+        axis.title = element_text(face = 'bold'),
+        axis.text.x = element_text(angle= 90 , vjust= 0.5 , hjust= 1 ))
+
+```
+
+Box plot of STS from the outcome depending on the type of prosthetics.
+
+```{r}
+ggplot(df1) +
+  geom_boxplot(aes(x = Upsizing, y = STS, fill = OS_Event)) +
+  labs(x = "Upsizing", y = "STS") +
+  theme_bw() +
+  theme(plot.title = element_text(size = 14, hjust = 0.5),
+        axis.title = element_text(face = 'bold'))
+```
+Box plot of MPG from the outcome depending on the type of prosthetics.
+
+```{r}
+ggplot(df1) +
+  geom_boxplot(aes(x = Upsizing, y = Pre_MAVG_MPG, fill = OS_Event)) +
+  labs(x = "Upsizing", y = "MPG") +
+  theme_bw() +
+  theme(plot.title = element_text(size = 14, hjust = 0.5),
+        axis.title = element_text(face = 'bold'))
+```
+
+
+## Сomorbidities
+
+```{r}
+# Data preparation 
+
+df1 <- df1 %>% 
+  mutate(`Congestive heart failure` = if_else(NYHA_Heart_Fail_Class %in% c(1:4), 1, if_else(is.na(NYHA_Heart_Fail_Class), NA, 0)),
+         `Pulmonary hypertension` = Pulm_HTN,
+         `Hypertension` = if_else(Art_HTN_Hypto_R == 9, NA, if_else(Art_HTN_Hypto_R %in% c(1:4), 1, 0 )),
+         `Coronary artery disease` = if_else(Coronary_Art_Disease == 0, NA, if_else(Coronary_Art_Disease %in% c(2:4), 1, 0 )),
+         `Atrial fibrillation` = if_else(Atrial_Fibrillation %in% c(1:3), 1, 0 ),
+         `Peripheral artery disease` = if_else(Peripher_Atheroscler %in% c(1:3), 1, 0 ),
+         `Endocarditis` = Endocard,
+         `Renal Failure` = if_else(Renal_Fail %in% c(2:5), 1, if_else(Renal_Fail == 0, NA, 0 )))
+
+
+
+df1 %>% 
+  select(Upsizing, `Congestive heart failure`:`Renal Failure`) %>%
+  group_by(Upsizing) %>% 
+  mutate(across(everything(), \(x) as.factor(x))) %>% 
+  summary()
+  
+
+```
+
+
+```{r}
+# Converting data to "long" format
+
+df1_comorb_long <- df1 %>% 
+  select(Upsizing, `Congestive heart failure`:`Renal Failure`) %>% 
+  group_by(Upsizing) %>% 
+  pivot_longer(cols = `Congestive heart failure`:`Renal Failure`, names_to = "Feature", values_to = "Value") %>% 
+  filter(Upsizing %in% c("Yes", "No")) %>% 
+  group_by(Upsizing, Feature) %>% 
+  summarise(Count_proc = sum(Value, na.rm = TRUE)/n())
+
+
+# Distribution of comorbidities in the groups.
+
+ggplot(df1_comorb_long,                         
+       aes(x = Feature,
+           y = Count_proc,
+           fill = Upsizing)) + 
+  geom_col() +
+  facet_grid(~ Upsizing) +
+  coord_flip() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Comorbidities", y = "Percent") +
+  theme_bw() +
+  theme(plot.title = element_text(size = 14, hjust = 0.5),
+        axis.title = element_text(face = 'bold'),
+        axis.text.x = element_text(angle= 90 , vjust= 0.5 , hjust= 1 )) 
+
+```
+
+
+```{r}
+df1_comorb_long <- df1 %>% 
+  select(Upsizing, `Congestive heart failure`:`Renal Failure`) %>% 
+  group_by(Upsizing) %>% 
+  pivot_longer(cols = `Congestive heart failure`:`Renal Failure`, names_to = "Feature", values_to = "Value") %>% 
+  filter(Upsizing %in% c("Yes", "No"))
+
+ggplot(df1_comorb_long,                         
+       aes(x = Feature,
+           y = Value,
+           fill = Upsizing)) + 
+  geom_bar(stat = "identity", position = "stack") +
+  facet_grid(~ Upsizing) +
+  coord_flip() +
+  labs(x = "Comorbidities", y = "Count") +
+  theme_bw() +
+  theme(plot.title = element_text(size = 14, hjust = 0.5),
+        axis.title = element_text(face = 'bold'))
+
+
+```
+
+
+
+# Comparison of echocardiography parameters between groups with normal-sized and upsizing
+## before surgery
+
+```{r}
+df1 <- df1 %>% 
+   mutate(Pre_AKI = ifelse(Pre_AKI %in% c(3, 4), "3-4", as.character(Pre_AKI)))
+
+df1 %>% 
+  select(Upsizing, Pre_LVEF:Pre_AKI, Pre_PHT) %>% 
+  filter(!is.na(Upsizing)) %>% 
+  tbl_summary(
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous() ~ c(
+      "{mean} ({sd})"
+    ),
+    by = Upsizing,
+    missing = "no",
+    label =  c("Pre_LVEF" = "LVEF, %",
+              "Pre_LVDd" = "LVDd, cm",
+              "Pre_LVDs" = "LVDs, cm",
+              "Pre_LVOT" = "LVOT, cm",
+              "Pre_PAP" = "PAP, mmHg",
+              "Pre_IVSd" = "IVSd, cm",
+              "Pre_IVSs" = "IVSs, cm", 
+              "Pre_MAVG_MPG" = "MPG, mmHg",
+              "Pre_Vmax" = "Vmax, m/sec",
+              "Pre_Aort_Valve_Area" = "Aortic valve area, cm2",
+              "Pre_AKI" = "Aortic insufficiency",
+              "Pre_PHT" = "Pulmonary Hypertension"),
+    digits = c(all_continuous() ~ c(1, 1),
+               all_categorical() ~ c(0, 1))
+  ) %>% 
+   add_p(all_continuous() ~t.test) %>% 
+   add_q(method = "holm") %>% 
+   modify_header(label ~ "**Variable**") %>%
+   modify_spanning_header(c("stat_1", "stat_2") ~ "**Upsizing**") %>%
+   bold_labels()
+```
+We use the Holm's method for controlling FWER.
+
+There were no statistically significant differences found between the group with upsizing and the group with a normal-sized prosthesis ( Welch Two Sample t-test, p adj>0.05).
+
+
+```{r}
+#for presentation
+
+table_echo_pre <- df1 %>% 
+  select(Upsizing, Pre_LVEF, Pre_MAVG_MPG, Pre_Aort_Valve_Area, Pre_AKI) %>% 
+  filter(!is.na(Upsizing)) %>% 
+  tbl_summary(
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous() ~ c(
+      "{mean} ({sd})"
+    ),
+    by = Upsizing,
+    missing = "ifany",
+    label = c("Pre_LVEF" = "LVEF, %",
+              "Pre_LVDd" = "LVDd, cm",
+              "Pre_LVDs" = "LVDs, cm",
+              "Pre_LVOT" = "LVOT, cm",
+              "Pre_PAP" = "PAP, mmHg",
+              "Pre_IVSd" = "IVSd, cm",
+              "Pre_IVSs" = "IVSs, cm", 
+              "Pre_MAVG_MPG" = "MPG, mmHg",
+              "Pre_Vmax" = "Vmax, m/sec",
+              "Pre_Aort_Valve_Area" = "Aortic valve area, cm2",
+              "Pre_AKI" = "Aortic insufficiency",
+              "Pre_PHT" = "Pulmonary Hypertension"),
+    digits = c(all_continuous() ~ c(1, 1),
+               all_categorical() ~ c(0, 1))
+  ) %>% 
+   add_p(all_continuous() ~t.test) %>% 
+   add_q(method = "holm") %>% 
+   modify_header(label ~ "**Variable**") %>%
+   modify_spanning_header(c("stat_1", "stat_2") ~ "**Upsizing**") %>%
+   bold_labels()
+```
+
+```{r}
+table_echo_pre %>% 
+  as_gt() %>%
+  gt::gtsave(filename = "data/pics/table_echo_pre.png") 
+```
+
+
+## before surgery - follow-up
+
+```{r}
+#prepare data
+df_echo_pre_fu <- df1 %>% 
+  rename(Pre_MAVG = Pre_MAVG_MPG) %>% 
+  select(Pre_LVEF:Pre_IVSd, Pre_MAVG:Pre_Aort_Valve_Area, FUEcho_EF:FUEcho_AOF) 
+
+n <- ncol(df_echo_pre_fu)
+s1 <- seq(1, n/2)
+s2 <- seq(n/2+1, n)
+
+df_echo_pre_fu[paste(names(df_echo_pre_fu)[s1], names(df_echo_pre_fu)[s2], sep="-")] <- df_echo_pre_fu[, s1] - df_echo_pre_fu[, s2]
+
+df_echo_pre_fu <- df_echo_pre_fu %>% 
+  select(`Pre_LVEF-FUEcho_EF`:`Pre_Aort_Valve_Area-FUEcho_AOF`)
+
+df2 <- bind_cols(df1, df_echo_pre_fu)
+```
+
+
+```{r}
+df2 %>% 
+  select(Upsizing, `Pre_LVEF-FUEcho_EF`:`Pre_Aort_Valve_Area-FUEcho_AOF`) %>% 
+  filter(!is.na(Upsizing)) %>% 
+  tbl_summary(
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous() ~ c(
+      "{mean} ({sd})",
+      "{median} ({p25}, {p75})",
+      "{min}, {max}"
+    ),
+    by = Upsizing,
+    missing = "always",
+    digits = c(all_continuous() ~ c(1, 1),
+               all_categorical() ~ c(0, 1))
+  ) %>% 
+   add_p(all_continuous() ~t.test, ) %>% 
+   add_q(method = "holm") %>% 
+   modify_header(label ~ "**Variable**") %>%
+   modify_spanning_header(c("stat_1", "stat_2") ~ "**Upsizing**") %>%
+   bold_labels()
+```
+
+# Comparison of operation characteristics between groups with normal-sized and upsizing
+
+```{r}
+df_sx <- df1 %>% 
+  select(Upsizing, Sx_Duration_Min, Sx_Cardiopulm_Bypass_t, Sx_Aort_Clamp_t) %>% 
+  filter(!is.na(Upsizing))
+
+df_sx %>% 
+  group_by(Upsizing) %>% 
+  get_summary_stats(`Sx_Duration_Min`, type = "mean_sd")
+
+
+#QQ-plot
+ggqqplot(df_sx, x = "Sx_Duration_Min", facet.by = "Upsizing")
+
+# Welch's t-test
+stat.test <- df_sx %>% 
+  t_test(`Sx_Duration_Min` ~ Upsizing) %>% 
+  add_xy_position(x = "Upsizing")
+stat.test
+
+# Visualization
+ggboxplot(
+  df_sx, 
+  x = "Upsizing", y = "Sx_Duration_Min", 
+  ylab = "Duration of the operation, min", xlab = "Upsizing",
+  fill = "#ffcc8c"
+  ) + 
+  labs(subtitle = get_test_label(stat.test, detailed = TRUE)) + 
+  stat_pvalue_manual(stat.test, tip.length = 0) 
+```
+
+```{r}
+ttest<- t.test(df_sx$Sx_Duration_Min ~ df_sx$Upsizing) %>% 
+  tidy()
+```
+
+The difference in mean Duration of the operation between the standard size group and the upsizing group `r round(ttest$estimate,1)` [`r round(ttest$conf.low,1)` ; `r round(ttest$conf.high,2)`] min. The difference is clinically insignificant.
+
+
+```{r}
+df_sx %>% 
+  group_by(Upsizing) %>% 
+  get_summary_stats(`Sx_Cardiopulm_Bypass_t`, type = "mean_sd")
+
+
+# Welch's t-test
+stat.test <- df_sx %>% 
+  t_test(`Sx_Cardiopulm_Bypass_t` ~ Upsizing) %>% 
+  add_xy_position(x = "Upsizing")
+stat.test
+
+# Visualization
+ggboxplot(
+  df_sx, 
+  x = "Upsizing", y = "Sx_Cardiopulm_Bypass_t", 
+  ylab = "Cardiopulmonary Bypass Time, min", xlab = "Upsizing",
+  fill = "#ffcc8c" 
+  ) + 
+  labs(subtitle = get_test_label(stat.test, detailed = TRUE)) + 
+  stat_pvalue_manual(stat.test, tip.length = 0) 
+```
+
+```{r}
+ttest<- t.test(df_sx$Sx_Cardiopulm_Bypass_t ~ df_sx$Upsizing) %>% 
+  tidy()
+
+```
+The difference in mean Cardiopulmonary Bypass Time between the standard size group and the upsizing group `r round(ttest$estimate,1)` [`r round(ttest$conf.low,1)` ; `r round(ttest$conf.high,2)`] min. 
+
+```{r}
+df_sx %>% 
+  group_by(Upsizing) %>% 
+  get_summary_stats(`Sx_Aort_Clamp_t`, type = "mean_sd")
+
+
+# Welch's t-test
+stat.test <- df_sx %>% 
+  t_test(`Sx_Aort_Clamp_t` ~ Upsizing) %>% 
+  add_xy_position(x = "Upsizing")
+stat.test
+
+# Visualization
+ggboxplot(
+  df_sx, 
+  x = "Upsizing", y = "Sx_Aort_Clamp_t", 
+  ylab = "Aortic clamp time, min", xlab = "Upsizing",
+  fill = "#ffcc8c" 
+  ) + 
+  labs(subtitle = get_test_label(stat.test, detailed = TRUE)) + 
+  stat_pvalue_manual(stat.test, tip.length = 0) 
+```
+
+
+`
+```{r}
+ttest<- t.test(df_sx$Sx_Aort_Clamp_t ~ df_sx$Upsizing) %>% 
+  tidy()
+
+```
+
+The difference in mean Aortic clamp time between the standard size group and the upsizing group `r round(ttest$estimate,1)` [`r round(ttest$conf.low,1)` ; `r round(ttest$conf.high,2)`] min.
+
+
+## Summary table of temporal characteristics of the operation
+
+```{r}
+df_sx <- df1 %>% 
+  select(Upsizing, Sx_Duration_Min, Sx_Cardiopulm_Bypass_t, Sx_Aort_Clamp_t) %>% 
+  filter(!is.na(Upsizing))
+
+df_sx %>% 
+  tbl_summary(
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous() ~ c(
+      "{mean} ({sd})",
+      "{median} ({p25}, {p75})",
+      "{min}, {max}"
+    ),
+    by = Upsizing,
+    missing = "no",
+    label = c("Sx_Duration_Min" = "Duration of the operation, min",
+              "Sx_Cardiopulm_Bypass_t" = "Duration of cardiopulmonary bypass, min",
+              "Sx_Aort_Clamp_t" = "Aortic clamping time, min"),
+    digits = c(all_continuous() ~ c(1, 1),
+               all_categorical() ~ c(0, 1))
+  ) %>% 
+   add_p(all_continuous() ~t.test) %>%
+   add_q(method = "holm") %>% 
+   modify_header(label ~ "**Variable**") %>%
+   modify_spanning_header(c("stat_1", "stat_2") ~ "**Upsizing**") %>%
+   bold_labels()
+```
+
+
+# MPG (pre post) vs Upsizing
+
+```{r}
+df1 <- df1 %>% 
+  mutate(`Pre MPG` = Pre_MAVG_MPG)
+
+```
+
+
+```{r}
+#MPG post linear model
+df1_fit_MPG_post_crude <- lm(`Post_MAVG` ~ Upsizing, df1)
+
+tbl_regression(df1_fit_MPG_post_crude, intercept = TRUE) %>% 
+  add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
+  add_glance_source_note()
+```
+
+
+
+```{r}
+#MPG post linear model adj
+df1_fit_MPG_post_adj <- lm(`Post_MAVG` ~ `Pre MPG` + Upsizing + Prosthesis_Anat_Size, df1)
+
+tbl_regression(df1_fit_MPG_post_adj, intercept = TRUE) %>% 
+  add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
+  add_glance_source_note()
+```
+
+```{r}
+vif(df1_fit_MPG_post_adj)
+#The residuals have equal variance (homoscedasticity)
+```
+
+```{r}
+#Diagnostic plots
+autoplot(df1_fit_MPG_post_adj)
+```
+
+
+```{r}
+# correction for heteroscedasticity
+#robust_fit <- coeftest(df1_fit_MPG_post_adj, vcov = vcovHC, type = "HC4")
+#robust_fit
+```
+
+```{r}
+mod_summary_MPG_post <- modelsummary::modelsummary(
+  list("MPG (post) crude " = df1_fit_MPG_post_crude,
+       "MPG (post) adj." = df1_fit_MPG_post_adj),
+  statistic = NULL,
+  fmt = 1,
+  coef_omit = "Intercept",
+  estimate =  "{estimate} {stars}[{conf.low}, {conf.high}]",
+ # stars = TRUE,
+  gof_map = "nobs",
+  output="gt")
+
+mod_summary_MPG_post
+  
+```
+
+```{r}
+gt::gtsave(mod_summary_MPG_post, "data/pics/mod_summary_MPG_post.png")
+```
+
+```{r}
+#EF post linear model
+df1_fit_EF_post_crude <- lm(Post_LVEF ~ Upsizing, df1)
+
+tbl_regression(df1_fit_EF_post_crude , intercept = TRUE) %>% 
+  add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
+  add_glance_source_note()
+```
+
+```{r}
+#EF post linear model adj
+df1_fit_EF_post_adj <- lm(Post_LVEF ~ Pre_LVEF + Upsizing + Prosthesis_Anat_Size, df1)
+
+tbl_regression(df1_fit_EF_post_adj, intercept = TRUE) %>% 
+  add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
+  add_glance_source_note()
+```
+
+```{r}
+mod_summary_EF_post <- modelsummary::modelsummary(
+  list("EF (post) crude " = df1_fit_EF_post_crude,
+       "EF (post) adj." = df1_fit_EF_post_adj),
+  statistic = NULL,
+  fmt = 1,
+  coef_omit = "Intercept",
+  estimate =  "{estimate} {stars}[{conf.low}, {conf.high}]",
+ # stars = TRUE,
+  gof_map = "nobs",
+  output="gt")
+
+mod_summary_MPG_post
+  
+```
+
+```{r}
+gt::gtsave(mod_summary_EF_post, "data/pics/mod_summary_EF_post.png")
+```
+
+# MPG (pre fu) vs Upsizing
+
+```{r}
+df1 <- df1 %>% 
+  mutate(`Time, days (fu-sx)` = as.numeric(ymd(FUEcho_Date) - ymd(Sx_Date)))
+
+#checking the dates 
+
+sum(ymd(df1$FUEcho_Date)<ymd(df1$Sx_Date), na.rm = TRUE)
+
+```
+
+```{r}
+ggpairs(
+  df1 %>% 
+  dplyr::select(FUEcho_MPG, `Pre MPG`, `Time, days (fu-sx)`, Prosthesis_Anat_Size, Upsizing), 
+  upper = list(continuous = wrap("points",size = 0.5),
+               disrete = "blank",
+               combo = wrap("points", size = 0.5)),
+  lower = list(continuous = "cor",
+               discrete = "count",
+               combo = wrap("box_no_facet", outlier.size = 0.5)),
+  diag = list(continuous = "barDiag",
+              discrete = "barDiag"),
+  showStrips = TRUE, progress = FALSE) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+## MPG
+
+### Crude
+
+```{r}
+summary(df1$`MPG diff pre fu`)
+
+df1_fit_FUEcho_MPG_crude <- lm(`FUEcho_MPG` ~ Upsizing, df1)
+
+tbl_regression(df1_fit_FUEcho_MPG_crude, intercept = TRUE) %>% 
+  add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
+  add_glance_source_note()
+```
+### Adjusted
+
+```{r}
+df1_FUEcho_MPG_adj <- lm(`FUEcho_MPG` ~ `Pre MPG` + Upsizing + `Time, days (fu-sx)` + Prosthesis_Anat_Size, df1)
+
+tbl_regression(df1_FUEcho_MPG_adj, intercept = TRUE) %>% 
+  add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
+  add_glance_source_note()
+```
+
+```{r}
+vif(df1_FUEcho_MPG_adj)
+```
+
+```{r}
+#Diagnostic plots
+autoplot(df1_FUEcho_MPG_adj)
+```
+
+
+```{r}
+mod_summary_MPG <- modelsummary::modelsummary(
+  list("MPG (fu) crude " = df1_fit_FUEcho_MPG_crude,
+       "MPG (fu) adj." = df1_FUEcho_MPG_adj),
+  statistic = NULL,
+  fmt = 1,
+  coef_omit = "Intercept",
+  estimate =  "{estimate} {stars}[{conf.low}, {conf.high}]",
+ # stars = TRUE,
+  gof_map = "nobs",
+  output="gt")
+
+mod_summary_MPG
+  
+```
+
+```{r}
+gt::gtsave(mod_summary_MPG, "data/pics/mod_summary_MPG.png")
+```
+
+
+## EF
+
+### Crude
+
+```{r}
+df1_fit_FUEcho_EF_crude <- lm(`FUEcho_EF` ~ Upsizing, df1)
+
+tbl_regression(df1_fit_FUEcho_EF_crude, intercept = TRUE) %>% 
+  add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
+  add_glance_source_note()
+```
+
+### Adjusted
+
+```{r}
+df1_fit_FUEcho_EF_adj <- lm(`FUEcho_EF` ~ `Pre_LVEF` + Upsizing + `Time, days (fu-sx)` + Prosthesis_Anat_Size, df1)
+
+tbl_regression(df1_fit_FUEcho_EF_adj, intercept = TRUE) %>% 
+  add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
+  add_glance_source_note()
+```
+
+```{r}
+autoplot(df1_fit_FUEcho_EF_adj)
+```
+
+
+```{r}
+mod_summary_EF <- modelsummary::modelsummary(
+  list("EF (fu) crude " = df1_fit_FUEcho_EF_crude,
+       "EF (fu) adj." = df1_fit_FUEcho_EF_adj),
+  statistic = NULL,
+  fmt = 1,
+  coef_omit = "Intercept",
+  estimate =  "{estimate} {stars}[{conf.low}, {conf.high}]",
+ # stars = TRUE,
+  gof_map = "nobs",
+  output="gt")
+
+mod_summary_MPG
+  
+```
+
+```{r}
+gt::gtsave(mod_summary_EF, "data/pics/mod_summary_EF.png")
+```
