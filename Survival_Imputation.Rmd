@@ -1,0 +1,544 @@
+---
+title: "Survival_Imputation"
+author: "Dmitrii Zhakota"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(readxl)
+library(survival)
+library(survminer)
+library(psych)
+library(PerformanceAnalytics)
+library(tidyverse)
+library(flextable)
+library(gtsummary)
+library(pec)
+library(car)
+
+```
+
+Загрузка данных Александра. Нужно удалить REOP_DAT из df1_no_date (см 49)
+
+```{r eval=FALSE, include=FALSE}
+#В таблице поправил даты, где только год поставил середину года
+#unbekannt вынес в отдельную колонку чтоб удобнее было вменять далее
+df_date <- read_xlsx("data/raw/Epic_Supra_dates_v2.xlsx", na = "")
+
+rename <- read.table(file = 'data/raw/Column_data_Renamer_v2.tsv', sep = '\t', header = TRUE)
+
+str(df_date)
+
+# Convert to vector column English_Column_Name_Short for rename
+English_Column_Name_Short <- as.vector(rename$English_Column_Name_Short)
+
+# Rename columns names in df_read_excel with vector English_Column_Name_Short
+df_date_en <- df_date %>% 
+  rename_with(~English_Column_Name_Short, everything())
+  
+# str(df_date)
+# summary(df_date)
+
+#Загрузим остальные данные
+df1_no_date <- read_csv("data/interim/df1_no_date.csv", na = "")
+
+# Remove column REOP_DAT from df1_no_date
+df1_no_date <- df1_no_date %>% 
+  select(-REOP_DAT)
+
+#Смержим
+df <- df_date_en %>% full_join(df1_no_date, by = c("Case_Num" = "Case_Num"))
+
+# str(df)
+# summary(df)
+
+```
+
+Загрузка данных импутации
+```{r}
+#В таблице поправил даты, где только год поставил середину года
+#unbekannt вынес в отдельную колонку чтоб удобнее было вменять далее
+df_date <- read_xlsx("data/raw/Epic_Supra_dates_v2.xlsx", na = "")
+
+rename <- read.table(file = 'data/raw/Column_data_Renamer_v2.tsv', sep = '\t', header = TRUE)
+
+str(df_date)
+
+# Convert to vector column English_Column_Name_Short for rename
+English_Column_Name_Short <- as.vector(rename$English_Column_Name_Short)
+
+# Rename columns names in df_read_excel with vector English_Column_Name_Short
+df_date_en <- df_date %>% 
+  rename_with(~English_Column_Name_Short, everything())
+  
+# str(df_date)
+# summary(df_date)
+
+#Загрузим остальные данные
+df1_no_date <- read_csv("data/interim/df_imput.csv", na = "")
+
+# Remove column REOP_DAT from df1_no_date
+df1_no_date <- df1_no_date %>% 
+  select(-c(Birth_Date, OS_Date, Last_FU, Sx_Date, FUEcho_Date, REOP_DAT))
+
+#Смержим
+df <- df_date_en %>% full_join(df1_no_date, by = c("Case_Num" = "Case_Num"))
+```
+
+
+Сделаем вменение где STERBEDAT = "unbekant"
+Посчитаем последний визит как последняя из дат (реоперации, ластфу, фуэхо и смерти)
+```{r}
+df <- df %>% 
+  mutate(Last_FU_upd = pmax(Last_FU, REOP_DAT, FUEcho_Date, OS_Date, na.rm = TRUE))
+summary(df$Last_FU_upd)
+```
+
+
+Проверим:
+1. Нет ли пациентов, чья дата смерти меньше даты последнешего из визитов
+2. Нет ли пациентов с датой последнего фолуапа до операции
+3. Нет ли пациентов о факте смерти мы не знаем и у которых нет фолуапа
+Посмотрим на этих пациентов:
+
+
+```{r}
+df <- df %>% 
+  mutate(Date_check = case_when(OS_Date < Last_FU_upd - 86400 ~ "Fail",
+                                Sx_Date > Last_FU_upd ~ "Fail", 
+                                is.na(Last_FU_upd) & OS_Event == 0 ~ "Fail",
+                                TRUE ~ "OK"))
+         
+df %>% 
+  filter(Date_check == "Fail") %>% 
+  select(c("Case_Num", "OS_Event", "Sx_Date", "OS_Date", "Last_FU_upd", "Date_check"))
+```
+
+Исключаем таких пациентов т.к. не сможем можем найти времени 
+```{r}
+df_filter <- df %>% 
+  filter(Date_check == "OK")
+```
+
+
+Найдем максимальную дату, которую примем за дату закрытия базы данных
+```{r}
+#Считаем 
+df_closing_date <- max(df_filter$Last_FU_upd, na.rm = TRUE)
+df_closing_date
+```
+Дали посчитаем время до смерти и вменим данные тем, о чей смерти мы знаем, но не знаем даты
+
+```{r}
+#Посчитаем длительность между известными датами смерти и датой операции
+df_filter <- df_filter %>% 
+  mutate(dur_SX_OS = OS_Date - Sx_Date) 
+
+median_dur_if_dead <- median(df_filter$dur_SX_OS, na.rm = TRUE)
+as.numeric(median_dur_if_dead)/86400
+```
+
+```{r}
+#Где нет последднего визита и дата смерти не известнa вменяем медиану времни до смерти при условии что известно, что пациент умер.
+df_filter <- df_filter %>% 
+  mutate(dur_SX_OS = if_else(OS_Date_unknown == 1 & is.na(Last_FU_upd) & is.na(dur_SX_OS), median_dur_if_dead, dur_SX_OS))
+```
+
+
+```{r}
+#Где есть последний визит, но дата смерти не известно, подставляем середину времени между последним визитом пациента и "закрытием базы данных" (самый последний визит из всех)
+df_filter <- df_filter %>% 
+  mutate(dur_SX_OS = if_else(OS_Date_unknown == 1 & !is.na(Last_FU_upd) & is.na(dur_SX_OS), (df_closing_date - Last_FU_upd)/2, dur_SX_OS))
+
+df_filter$dur_SX_OS
+```
+
+Все ли неизвестные сроки мы подставили?
+```{r}
+#Теперь проверим все ли ситуации получилось обработать таким образом
+sum(df_filter$OS_Date_unknown == 1 & is.na(df_filter$dur_SX_OS), na.rm = TRUE)
+```
+
+Теперь подготовим данные для капланмайера
+нам нужна время наблюдения (разница между операцией и последней датой) и статус (OS_Event он уже есть)
+сделаем время
+
+Посчитаем длительность для тех кто не умер т.к. для тех кто умер уже посчитали
+```{r}
+# df_filter$Last_FU_upd
+# df_filter$Sx_Date
+# посчитаем длительность 
+df_filter <- df_filter %>% 
+  mutate(dur_SX_Last_FU = Last_FU_upd - Sx_Date)
+
+filter(df_filter, dur_SX_Last_FU < 0) %>% 
+   select(c("Case_Num", "OS_Event", "Sx_Date", "OS_Date", "Last_FU_upd", "Date_check"))
+```
+
+
+```{r}
+# теперь нужно впихнуть длительность до смерти в длительность до последнего наблюдения
+df_filter <- df_filter %>% 
+  mutate(DUR = if_else(!is.na(dur_SX_OS), dur_SX_OS, NA)) %>% 
+  mutate(DUR = if_else(is.na(DUR) & !is.na(dur_SX_Last_FU), dur_SX_Last_FU, DUR)) %>% 
+  mutate(DUR = ceiling(as.numeric(DUR) / 86400))
+
+summary(df_filter$DUR)
+df_filter$DUR
+
+summary(df_filter$Sx_Aort_Clamp_t)
+```
+Теперь посмотрим на пациентов которые попали в анализ
+```{r}
+str(df_filter)
+write.csv(df_filter, "data/interim/df_filter_surv.csv", row.names = FALSE) # Без изменений после загрузки из excel
+```
+
+
+```{r}
+df_surv_all <- df_filter %>% 
+  select("Case_Num", "Age", "BMI", "Gender", "STS", "Prosthesis_Anat_Aort_Valve",
+         "Pre_Bicuspid", "Prosthesis_Anat_Size", "Sx_Date", "Upsizing", "OS_Event", "Sx_Aort_Clamp_t", "DUR") %>% 
+  mutate(Prosthesis_Anat_Size = as.numeric(Prosthesis_Anat_Size),
+         Sx_Aort_Clamp_t = if_else(Sx_Aort_Clamp_t == 0, median(Sx_Aort_Clamp_t), Sx_Aort_Clamp_t))
+```
+Посмотрим на всех вместе
+
+```{r}
+#df_date_surv <- df_date %>% 
+#  mutate(Upsizing = as.factor(Upsizing))  %>% 
+#  mutate(Upsizing = if_else(is.na(Upsizing), "NA", "Known")) %>% 
+#  filter(!is.na(DUR))
+
+df_surv_all %>% 
+  select(-c("Case_Num")) %>% 
+  tbl_summary(by = Upsizing) %>% 
+  add_p()
+```
+
+Только на известный апсайзинг:
+
+```{r}
+df_surv_known <- df_filter %>% 
+  select("Case_Num", "Age", "BMI", "Gender", "NYHA_Heart_Fail_Class", "STS", "Prosthesis_Anat_Aort_Valve", "Pre_Bicuspid", "Prosthesis_Anat_Size", "Sx_Date", "Upsizing", "OS_Event", "DUR", "Sx_Aort_Clamp_t") %>% 
+  mutate(Prosthesis_Anat_Size = as.numeric(Prosthesis_Anat_Size),
+         Upsizing = as.factor(if_else(Upsizing == "NA", NA, Upsizing)),
+         Sx_Aort_Clamp_t = if_else(Sx_Aort_Clamp_t == 0, median(Sx_Aort_Clamp_t), Sx_Aort_Clamp_t)) %>% 
+  filter(!is.na(Upsizing))
+
+df_surv_known %>% 
+  select(-c("Case_Num")) %>% 
+  tbl_summary(by = Upsizing) %>% 
+  add_p()
+```
+
+```{r}
+str(df_surv_known)
+```
+
+
+```{r}
+df_surv_known <- df_surv_known %>% 
+  select(-Pre_Bicuspid) %>% 
+  mutate(Prosthesis_Anat_Aort_Valve = as.factor(case_when(Prosthesis_Anat_Aort_Valve == 0 ~ "3x",
+                                                          Prosthesis_Anat_Aort_Valve == 1 ~ "2x",
+                                                          Prosthesis_Anat_Aort_Valve == 2 ~ NA)),
+         Gender = as.factor(if_else(Gender == 1, "male", "female")),
+         Sx_Date = as.numeric(Sx_Date - min(Sx_Date, na.rm = TRUE))/31688100,
+         Upsizing = as.factor(if_else(Upsizing == 1, "UP_size", "Anatomical_Size")),
+         NYHA_Heart_Fail_Class  = as.factor(NYHA_Heart_Fail_Class))
+
+df_surv_known %>% 
+  select(-c("Case_Num")) %>% 
+  tbl_summary(by = Upsizing) %>% 
+  add_p()
+```
+
+
+```{r}
+surv_object <- Surv(time = df_surv_known$DUR, event = df_surv_known$OS_Event)
+
+fit_crude <- survfit(surv_object ~ Upsizing, data = df_surv_known)
+
+q1 <- quantile(fit_crude, probs = c(0.25, 0.75),
+              conf.int = TRUE)
+as.data.frame(q1)
+
+p1 <- ggsurvplot(fit_crude,
+                title = "Survival curve following data imputation",
+                conf.int = TRUE,
+                risk.table = TRUE,
+                tables.height = 0.2,
+                pval = TRUE, 
+                pval.coord = c(750, 0.7),
+                log.rank.weights = "1",
+                xlab = "Time, days",
+                ylim = c(0.5, 1))
+
+p1
+summary(fit_crude)
+```
+
+```{r, warning=FALSE}
+
+library(GGally)
+ggpairs(df_surv_known %>% select(-Case_Num, -DUR), 
+  upper = list(continuous = wrap("points", alpha = 0.5, size = 1),
+               combo = wrap("points", alpha = 0.5, size = 1),
+               disrete = "blank"),
+  lower = list(continuous = "cor",
+               discrete = "count",
+               combo = wrap("box_no_facet", outlier.size = 0.5)),
+  diag = list(continuous = "barDiag",
+              discrete = "barDiag"),
+  showStrips = TRUE, progress = FALSE) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1),
+        panel.grid.minor = element_blank(),
+        strip.placement = "outside",
+        strip.background = element_rect(color = "white", fill = "#EFEBE9"),
+        strip.text = element_text(size = 6, face = "bold"))
+```
+
+```{r}
+#library(psych)
+# mixed.cor(df_surv_known %>% select(-Case_Num, -DUR), c = c(1,) ncat = 6, )
+```
+
+```{r}
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date + Sx_Aort_Clamp_t + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date + Prosthesis_Anat_Size + Sx_Aort_Clamp_t,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+cox.zph(fit_covariance)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+
+anova(fit_covariance, fit_covariance2)
+```
+
+```{r}
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Aort_Clamp_t + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size + Sx_Aort_Clamp_t,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+cox.zph(fit_covariance)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+
+anova(fit_covariance, fit_covariance2)
+```
+```{r}
+df_surv_known <- df_surv_known %>% 
+  mutate(NYHA_Heart_Fail_Class_ = if_else(as.numeric(NYHA_Heart_Fail_Class) < 2, "0, 1", "2-4"))
+
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size*Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+cox.zph(fit_covariance)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+
+anova(fit_covariance, fit_covariance2)
+```
+
+
+```{r}
+df_surv_known <- df_surv_known %>% 
+  mutate(NYHA_Heart_Fail_Class_ = if_else(as.numeric(NYHA_Heart_Fail_Class) < 2, "0, 1", "2-4"))
+
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + NYHA_Heart_Fail_Class_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size + log10(STS+1)*Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~ Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+cox.zph(fit_covariance)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+
+anova(fit_covariance, fit_covariance2)
+```
+
+```{r}
+fit_covariance <- coxph(surv_object ~  Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date + Sx_Aort_Clamp_t + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~  Age + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve + Sx_Date + Sx_Aort_Clamp_t + Prosthesis_Anat_Size,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+
+cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+concordance(fit_covariance2)
+vif(fit_covariance)
+anova(fit_covariance, fit_covariance2)
+ggcoxdiagnostics(fit_covariance, type = c("martingale"))
+ggcoxdiagnostics(fit_covariance, type = c("deviance"))
+ggcoxdiagnostics(fit_covariance, type = c("score"))
+ggcoxdiagnostics(fit_covariance, type = c("schoenfeld"))
+ggcoxdiagnostics(fit_covariance, type = c("dfbeta"))
+ggcoxdiagnostics(fit_covariance, type = c("dfbetas"))
+ggcoxdiagnostics(fit_covariance, type = c("scaledsch"))
+# ggcoxdiagnostics(fit_covariance, type = c("partial"))
+ggcoxdiagnostics(fit_covariance, type = "dfbetas", point.size = 0, hline.col = "black",
+sline.col = "black") + geom_bar(stat = "identity")
+```
+
+
+s.res <- residuals(fit_covariance, type = "score")
+ld <- diag(s.res %*% fit_covariance$var %*% t(s.res))
+lhd <- data.frame(ObservationID = 1:nrow(df_surv_known), LD = ld)
+qplot(x = ObservationID, y = LD, data = lhd, geom = "point", ylab = "Likelihood Displacement",
+xlab = "Observation ID", size = I(0.3)) + geom_bar(stat = "identity")
+
+
+```{r}
+df_surv_known <- df_surv_known %>% 
+  mutate(Age_ = if_else(Age < 70, "< 70", "70+"),
+         BMI_ = if_else(BMI < 30, "< 30", "30+"),
+         NYHA_Heart_Fail_Class_ = if_else(as.numeric(NYHA_Heart_Fail_Class) < 2, "0, 1", "2-4"),
+         STS_ = if_else(STS < 3, "< 3", "3+"),
+         Prosthesis_Anat_Size_ = if_else(Prosthesis_Anat_Size < 26, "< 26", "26+"),
+         Sx_Aort_Clamp_t_ = if_else(Sx_Aort_Clamp_t < 70, "< 70", "70+"))
+
+surv_object <- Surv(time = df_surv_known$DUR, event = df_surv_known$OS_Event)
+
+fit_covariance <- coxph(surv_object ~ + Age_ + BMI_ + Gender + STS_ + Prosthesis_Anat_Aort_Valve + Prosthesis_Anat_Size_ + Sx_Aort_Clamp_t_ + Upsizing,
+                   data = as.data.frame(df_surv_known))
+
+cox.zph(fit_covariance)
+ggforest(fit_covariance)
+```
+
+```{r}
+haz <- fitSmoothHazard(OS_Event ~ ns(DUR, df = 3) + log10(STS+1) + Prosthesis_Anat_Size + Upsizing,
+                   data = df_surv_known, time = "DUR")
+
+gg_object <- plot(haz,
+                  hazard.params = list(xvar = "DUR",
+                                       by = "Upsizing",
+                                       alpha = 0.20, # 80% CI
+                                       ylab = "Hazard",
+                                       gg = TRUE)) 
+gg_object +
+  theme_bw()
+```
+
+
+```{r}
+fit_covariance <- coxph(surv_object ~ log10(STS + 1) + Prosthesis_Anat_Aort_Valve + Upsizing,
+                   data = df_surv_known)
+
+fit_covariance2 <- coxph(surv_object ~ log10(STS + 1) + Prosthesis_Anat_Aort_Valve,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+concordance(fit_covariance)
+vif(fit_covariance)
+anova(fit_covariance, fit_covariance2)
+
+```
+
+```{r}
+#library(glmnet)
+
+
+
+
+
+
+```
+
+
+```{r}
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + STS + Prosthesis_Anat_Aort_Valve*Upsizing + Sx_Date,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+```
+
+```{r}
+fit_covariance <- coxph(surv_object ~ Age + BMI + Gender + STS*Upsizing + Prosthesis_Anat_Aort_Valve + Sx_Date,
+                   data = df_surv_known)
+
+tbl_regression(fit_covariance, exp = TRUE)
+
+test.ph <- cox.zph(fit_covariance)
+ggcoxzph(test.ph)
+```
+
+
+
+## Старый код
+cox_model <- coxph(Surv(time = df_date_surv$DUR, event = df_date_surv$OS_Event) ~ ALTER_OP + AK_ANN + After_MPG,
+                   data = df_date_surv)
+
+tbl_regression(cox_model, exp = TRUE, label = list(ALTER_OP ~ "Возраст", AK_ANN ~ "Анатомический d клапана"))
+
+test.ph <- cox.zph(cox_model)
+ggcoxzph(test.ph)
+
+cindex(object = cox_model, Surv(time = df_date_surv$DUR, event = df_date_surv$OS_Event) ~ Upsizing, data = df_date_surv)
+
+
+df_date_surv <- df_date_surv %>% 
+  mutate(MPG_delta = After_MPG - as.numeric(Befor_MPG),
+         Befor_MPG = as.numeric(Befor_MPG))  %>% 
+  filter(Upsizing != "NA")
+
+str(df_date_surv)
+
+ggplot(df_date_surv, aes(x = Befor_MPG, y = After_MPG, col = Upsizing)) +
+  geom_point(shape = 1) +
+  ylim(0, 40) +
+  geom_smooth() +
+  theme_classic2()
+
+ggplot(df_date_surv, aes(x = AK_ANN, y = After_MPG, col = Upsizing)) +
+  geom_jitter(width = 0.4, shape = 1) +
+  ylim(0, 40) +
+  xlim(19, 32) +
+  geom_smooth() +
+  theme_classic2()
+
+
