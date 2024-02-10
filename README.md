@@ -11,6 +11,7 @@ The aortic valve permits blood to flow in one direction, from the left ventricle
 
 During aortic valve replacement surgery, the standard procedure is direct intraoperative measurement of the aortic annulus and implantation of the prosthesis of the measured size [3]. The placement of a larger (oversized) prosthesis reduces the mean pressure gradient (MPG) across the valve.  An example of bioprosthesis is shown at Figure 2.
 ![prosthesis_example](data/pics/prosthesis_example.png)
+
 ***Figure 2.** Bioprosthesis example.*
 
 # Study design, aims and tasks
