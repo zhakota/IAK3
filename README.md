@@ -62,38 +62,41 @@ Groups weren't different by any comorbidity (Figure 6), p-value = 0.093
 ![upsizing_by_comorbidities](data/pics/upsizing_by_comorbidities.png)
 ***Figure 6.** Upsizing groups by comorbidities, percentage of disease present from the upsizing group.* 
 
+According to the EDA and domain knowledge, we've evaluated covariates on their possible rols as confounder, mediators or colliders and made a graph showing casual inference - DAG (Figure 7). 
+![dag](data/pics/dag.png)
+***Figure 7.** DAG for the covariates.*
 
 ## Survival and Imputation
 See the full analysis report for survival assessment [here](https://htmlpreview.github.io/?https://github.com/zhakota/IAK3/blob/main/Survival.html).
-The median follow-up was 32 (1.3; 64) and 36 (3.5; 69) months for group 1 and group 2, respectively. Median survival was not reached during the follow-up period, 75% percentile of unadjusted survival was 5.82 (95% CI: 4.70, 7.75) vs 6.84 (95% CI: 5.92, 8.31) years, for group 1 and group 2, respectively (log-rank p=0.112). See Figure 7 for Kaplan-Meier plot.
+The median follow-up was 32 (1.3; 64) and 36 (3.5; 69) months for group 1 and group 2, respectively. Median survival was not reached during the follow-up period, 75% percentile of unadjusted survival was 5.82 (95% CI: 4.70, 7.75) vs 6.84 (95% CI: 5.92, 8.31) years, for group 1 and group 2, respectively (log-rank p=0.112). See Figure 8 for Kaplan-Meier plot.
 
 ![kme](data/pics/kme.png)
-***Figure 7.** Kaplan-Meier estimator for the upsizing groups.* 
+***Figure 8.** Kaplan-Meier estimator for the upsizing groups.* 
 
-After adjustment for covariates (Age, Surgeon, Body mass index, or BMI, Sex, New York Heart Association, or NYHA, heart failure class, Society of Thoracic Surgeons, or STS, score, and anatomical size of the prosthesis), survival in the oversizing group was higher than in the anatomic diameter group (HRadj: 0.62; 95% CI: 0.46, 0.83; p=0.001). Figure 8 depicts univariate and multivariate models.  
+After adjustment for covariates (Age, Surgeon, Body mass index, or BMI, Sex, New York Heart Association, or NYHA, heart failure class, Society of Thoracic Surgeons, or STS, score, and anatomical size of the prosthesis), survival in the oversizing group was higher than in the anatomic diameter group (HRadj: 0.62; 95% CI: 0.46, 0.83; p=0.001). Figure 9 depicts univariate and multivariate models.  
 ![cox_upsizing](data/pics/cox_upsizing.png)
-***Figure 8.** Cox regression analysis for Upsizing with different covariates.*
+***Figure 9.** Cox regression analysis for Upsizing with different covariates.*
 
-This result was robust across the subgroups (Age: <70, ≥70 year; BMI: <30, ≥30; Sex; NYHA class: 3-4, 0-2 heart fail class; Anatomical valve size: <26, ≥26; STS score: <3; ≥3 score), survival was not significantly different in any subgroup (Figure 9). 
+This result was robust across the subgroups (Age: <70, ≥70 year; BMI: <30, ≥30; Sex; NYHA class: 3-4, 0-2 heart fail class; Anatomical valve size: <26, ≥26; STS score: <3; ≥3 score), survival was not significantly different in any subgroup (Figure 10). 
 ![cox_robust](data/pics/cox_robust.png)
-***Figure 9.** Cox regression analysis for Upsizing in different subgroups. None of the estimations had HR>1.*
+***Figure 10.** Cox regression analysis for Upsizing in different subgroups. None of the estimations had HR>1.*
 
-Imputation of a missing anatomic valve diameter did not change the effect of oversizing bioprosthesis (for predictive mean matching HRadj: 0.63, 95% CI: 0.48, 0.83; for worst case scenario HRadj: 0.71, 95% CI: 0.54, 0.93), Figure 10. 
+Imputation of a missing anatomic valve diameter did not change the effect of oversizing bioprosthesis (for predictive mean matching HRadj: 0.63, 95% CI: 0.48, 0.83; for worst case scenario HRadj: 0.71, 95% CI: 0.54, 0.93), Figure 11. 
 ![sensitivity](data/pics/sensitivity.png)
-***Figure 10**. Results for imputed anatomical size and for the worst scenario (all of the imputed values were with upsizing).*
+***Figure 11**. Results for imputed anatomical size and for the worst scenario (all of the imputed values were with upsizing).*
 
 ## Echocardiographic parameters
-During the analysis of echocardiography parameters, we identified that the adjusted (for MPG before operation, time to follow-up, anatomical size of the prosthesis) MPG on follow-up was significantly lower in the oversizing group (β = −2.5, 95% CI: −4.8, −0.2 mmHg). However, the adjusted (for ejection fraction before operation, time to follow-up, anatomical size of the prosthesis) ejection fraction did not differ between two groups (β = 1.4, 95% CI: −0.9, 3.7 %). See Figure 11 for the results.
+During the analysis of echocardiography parameters, we identified that the adjusted (for MPG before operation, time to follow-up, anatomical size of the prosthesis) MPG on follow-up was significantly lower in the oversizing group (β = −2.5, 95% CI: −4.8, −0.2 mmHg). However, the adjusted (for ejection fraction before operation, time to follow-up, anatomical size of the prosthesis) ejection fraction did not differ between two groups (β = 1.4, 95% CI: −0.9, 3.7 %). See Figure 12 for the results.
 ![mpg_fu](data/pics/mpg_fu.png)
-***Figure 11.** Echocardiographic parameters and Upszing.*
+***Figure 12.** Echocardiographic parameters and Upszing.*
 
 
 ## Safety, surgery and life quality metrics
 See [report](https://htmlpreview.github.io/?https://github.com/zhakota/IAK3/blob/main/Safety_Surgery_metrics_life_quality.html)  for the surgery, safety and life quality data assessment for full results.
-Adjusting for covariates (Surgeon, Surgery Urgency, NYHA class, Sex, BMI, log-scaled STS score, endocarditis, pre-surgery implant, and prosthesis size), oversizing did not affect surgery duration (β = 0.5, 95% CI: -8.5, 9.5 min) or cardiac pacing (OR=0.82, 95% CI: 0.56, 1.21). However, it significantly reduced cardiopulmonary bypass time by 5.8 min (β = −5.8, 95% CI: −11, −0.6 min) and aortic clamping time by 5.1 min (β = −5.1, 95% CI: −8.2, −1.9 min). Crude and adjusted variants for categorical variables (divided by median) are shown at Figure 12.
-After adjusting for NYHA class, Sex, BMI, log-scaled STS score, and prosthesis size, safety metrics showed no significant differences between anatomical size groups and oversizing groups, including prosthetic valve degeneration (OR: 0.8, 95% CI: 0.4, 1.5), overall reoperations (OR = 0.8, 95% CI: 0.6, 1.1), and reoperations within 30 days (OR = 0.9, 95% CI: 0.6, 1.3). See Figure 12. Quality of life metrics, including pain, self-care, daytime activity, and fear, did not significantly differ between groups (ORs ranging from 0.9 to 1.1, lowest p=0.46). 
+Adjusting for covariates (Surgeon, Surgery Urgency, NYHA class, Sex, BMI, log-scaled STS score, endocarditis, pre-surgery implant, and prosthesis size), oversizing did not affect surgery duration (β = 0.5, 95% CI: -8.5, 9.5 min) or cardiac pacing (OR=0.82, 95% CI: 0.56, 1.21). However, it significantly reduced cardiopulmonary bypass time by 5.8 min (β = −5.8, 95% CI: −11, −0.6 min) and aortic clamping time by 5.1 min (β = −5.1, 95% CI: −8.2, −1.9 min). Crude and adjusted variants for categorical variables (divided by median) are shown at Figure 13.
+After adjusting for NYHA class, Sex, BMI, log-scaled STS score, and prosthesis size, safety metrics showed no significant differences between anatomical size groups and oversizing groups, including prosthetic valve degeneration (OR: 0.8, 95% CI: 0.4, 1.5), overall reoperations (OR = 0.8, 95% CI: 0.6, 1.1), and reoperations within 30 days (OR = 0.9, 95% CI: 0.6, 1.3). See Figure 13. Quality of life metrics, including pain, self-care, daytime activity, and fear, did not significantly differ between groups (ORs ranging from 0.9 to 1.1, lowest p=0.46). 
 ![safety_surgery](data/pics/safety_surgery.png)
-***Figure 12.** Safety and Surgery metrics, binarized by median for numerical values. Upsizing did not worsen any metric in any setting.*
+***Figure 13.** Safety and Surgery metrics, binarized by median for numerical values. Upsizing did not worsen any metric in any setting.*
 
 # Conclusions
 Oversizing of bioprosthesis was associated with better adjusted survival, and multiple imputation of missing values for anatomical valve diameter have not impacted the results. We confirmed that there was an improvement in hemodynamics in the oversizing group on follow-up, specifically a reduction of MPG. We showed that oversizing of bioprosthesis was not associated with reoperations, prosthesis degeneration, post-surgery life quality metrics, surgery duration and cardiac pacing, and cardiopulmonary bypass and aortic clamping time were significantly reduced in the oversizing group.
