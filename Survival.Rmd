@@ -5,7 +5,7 @@ date: "2024-01-09"
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 
 library(readxl)
 library(survival)
@@ -26,7 +26,7 @@ library(mice)
 ```
 
 ## Loading, checking and consolidating data
-```{r}
+```{r, warning=FALSE, error=FALSE, error=FALSE}
 #The dates in the table have been manually corrected. Where there was only a year, the middle of the year is set
 #The value "unbekannt" is placed in a separate column to make it easier to impute values further
 df_date <- read_xlsx("data/raw/Epic_Supra_dates_v2.xlsx", na = "")
@@ -58,7 +58,7 @@ df <- df_date_en %>% full_join(df1_no_date, by = c("Case_Num" = "Case_Num"))
 
 
 Let's impute the data where STERBEDAT = "unbekant"Let's count the last visit as the last of the dates (reoperation, lastfu, fueсho and death)
-```{r}
+```{r, warning=FALSE, error=FALSE, error=FALSE}
 df <- df %>% 
   mutate(Last_FU_upd = pmax(Last_FU, REOP_DAT, FUEcho_Date, OS_Date, na.rm = TRUE))
 summary(df$Last_FU_upd)
@@ -67,11 +67,14 @@ summary(df$Last_FU_upd)
 
 Check:
 1. Are there any patients whose date of death is less than the date of their last visit?
+
 2. Are there any patients with the date of the last foluap before surgery?
+
 3. Are there any patients we don’t know about the fact of death who do not have FollowUp?
+
 Let's look at these patients:
 
-```{r}
+```{r, warning=FALSE, error=FALSE, error=FALSE}
 df <- df %>% 
   mutate(Date_check = case_when(OS_Date < Last_FU_upd - 86400 ~ "Fail",
                                 Sx_Date > Last_FU_upd ~ "Fail", 
@@ -84,14 +87,14 @@ df %>%
 ```
 
 We exclude patients for whom it is impossible to determine the date of the  FollowUp
-```{r}
+```{r, warning=FALSE, error=FALSE, error=FALSE}
 df_filter <- df %>% 
   filter(Date_check == "OK")
 ```
 
 
 Let's find the maximum date, which we will take as the database closure date
-```{r}
+```{r, warning=FALSE, error=FALSE}
 df_closing_date <- max(df_filter$Last_FU_upd, na.rm = TRUE)
 df_closing_date
 ```
@@ -99,7 +102,7 @@ df_closing_date
 
 Let's calculate the time until death and impute the data to those whose death we know about, but do not know the date
 
-```{r}
+```{r, warning=FALSE, error=FALSE}
 #Calculation of duration between known dates of death and dates of surgery
 df_filter <- df_filter %>% 
   mutate(dur_SX_OS = OS_Date - Sx_Date) 
@@ -110,14 +113,14 @@ as.numeric(median_dur_if_dead)/86400
 
 
 Where there is no last visit and the date of death is unknown, we impute the median time to death, provided that the patient is known to have died.
-```{r}
+```{r, warning=FALSE, error=FALSE}
 df_filter <- df_filter %>% 
   mutate(dur_SX_OS = if_else(OS_Date_unknown == 1 & is.na(Last_FU_upd) & is.na(dur_SX_OS), median_dur_if_dead, dur_SX_OS))
 ```
 
 
 Where there is a last visit, but the date of death is unknown, we substitute the midpoint of the time between the patient’s last visit and the “closing of the database” (the most recent visit of all)
-```{r}
+```{r, warning=FALSE, error=FALSE, include=FALSE}
 df_filter <- df_filter %>% 
   mutate(dur_SX_OS = if_else(OS_Date_unknown == 1 & !is.na(Last_FU_upd) & is.na(dur_SX_OS), (df_closing_date - Last_FU_upd)/2, dur_SX_OS))
 
@@ -126,7 +129,7 @@ df_filter$dur_SX_OS
 
 
 Now let’s check whether all situations can be processed in this way
-```{r}
+```{r, warning=FALSE, error=FALSE}
 sum(df_filter$OS_Date_unknown == 1 & is.na(df_filter$dur_SX_OS), na.rm = TRUE)
 ```
 
@@ -137,7 +140,7 @@ The observation statute is already there, the variable "OS_Event"
 It is necessary to calculate the duration of observation for each subject
 
 Let's calculate the duration only for those who are not dead, because for the dead it has already been calculated
-```{r}
+```{r, warning=FALSE, error=FALSE}
 # df_filter$Last_FU_upd
 # df_filter$Sx_Date
 df_filter <- df_filter %>% 
@@ -148,7 +151,7 @@ filter(df_filter, dur_SX_Last_FU < 0) %>%
 ```
 
 Combine the duration to death with the duration to last follow-up
-```{r}
+```{r, warning=FALSE, error=FALSE, include = FALSE}
 df_filter <- df_filter %>% 
   mutate(DUR = if_else(!is.na(dur_SX_OS), dur_SX_OS, NA)) %>% 
   mutate(DUR = if_else(is.na(DUR) & !is.na(dur_SX_Last_FU), dur_SX_Last_FU, DUR)) %>% 
@@ -162,7 +165,7 @@ summary(df_filter$Sx_Aort_Clamp_t)
 
 
 Save the dataset with patients for whom the outcome/duration is known
-```{r}
+```{r, warning=FALSE, error=FALSE}
 # str(df_filter)
 write.csv(df_filter, "data/interim/df_filter_surv.csv", row.names = FALSE) # Без изменений после загрузки из excel
 ```
@@ -171,7 +174,7 @@ write.csv(df_filter, "data/interim/df_filter_surv.csv", row.names = FALSE) # Б�
 ## Baseline values of demographic and anthropometric characteristics
 
 Let's select the variables we are interested in
-```{r}
+```{r, warning=FALSE, error=FALSE}
 df_surv_all <- df_filter %>% 
   select("Case_Num", "Age", "BMI", "Gender", "STS", "Prosthesis_Anat_Aort_Valve",
          "Pre_Bicuspid", "Prosthesis_Anat_Size", "Sx_Date", "Upsizing", "OS_Event", "DUR") %>% 
@@ -180,7 +183,7 @@ df_surv_all <- df_filter %>%
 
 
 The value of characteristics at time point 0 in the groups of known upsizing and unknown upsizing
-```{r}
+```{r, warning=FALSE, error=FALSE}
 #df_date_surv <- df_date %>% 
 #  mutate(Upsizing = as.factor(Upsizing))  %>% 
 #  mutate(Upsizing = if_else(is.na(Upsizing), "NA", "Known")) %>% 
@@ -194,7 +197,7 @@ df_surv_all %>%
 
 
 Value of characteristics at time point 0 only in groups of known upsizing
-```{r}
+```{r, warning=FALSE, error=FALSE}
 df_surv_known_tmp <- df_filter %>% 
   select("Case_Num", "Age", "BMI", "Gender", "NYHA_Heart_Fail_Class", "STS", "Prosthesis_Anat_Aort_Valve", "Pre_Bicuspid", "Prosthesis_Anat_Size", "Sx_Date", "Upsizing", "OS_Event", "DUR", "Sx_Urgency", "Sx_Surgeon", "Sx_Urgency") %>% 
   mutate(Prosthesis_Anat_Size = as.numeric(Prosthesis_Anat_Size),
@@ -212,7 +215,7 @@ df_surv_known_tmp %>%
 
 Formatted table
 
-```{r}
+```{r, warning=FALSE, error=FALSE}
 df_surv_known <- df_surv_known_tmp %>% 
   select(-Pre_Bicuspid) %>% 
   add_count(Sx_Surgeon) %>% 
@@ -271,7 +274,7 @@ ggpairs(df_surv_known %>% select(-c("OS_Event", "time_year")),
 
 
 Crude model KM plot
-```{r}
+```{r, warning=FALSE, error=FALSE}
 df_surv_known_tmp2 <-  df_surv_known_tmp %>% 
 mutate(Upsizing = if_else(Upsizing == "1", "Yes", "No"))
 
@@ -291,7 +294,7 @@ p1 <- ggsurvplot(fit_crude_KM,
                 risk.table = TRUE,
                 tables.height = 0.2,
                 pval = TRUE, 
-                pval.coord = c(750, 0.7),
+                pval.coord = c(2.5, 0.7),
                 log.rank.weights = "1",
                 xlab = "Time, year",
                 ylim = c(0.5, 1))
@@ -303,14 +306,14 @@ tbl_crude <- tbl_regression(fit_crude, exponentiate = TRUE)
 tbl_crude
 ```
 
-```{r}
+```{r, warning=FALSE, error=FALSE}
 test.ph <- cox.zph(fit_crude)
 ggcoxzph(test.ph)
 concordance(fit_crude)
 ```
 
 Full model
-```{r}
+```{r, warning=FALSE, error=FALSE}
 fit_full <- coxph(surv_object ~ Upsizing + Prosthesis_Anat_Size + Age + Surgeon + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve,
                    data = df_surv_known, x = TRUE)
 
@@ -321,7 +324,7 @@ tbl_full
 ```
 
 
-```{r}
+```{r, warning=FALSE, error=FALSE}
 cox.zph(fit_full)
 test.ph <- cox.zph(fit_full)
 ggcoxzph(test.ph)
@@ -336,7 +339,7 @@ Adding surgeons improved the statistical significance of upsyzine. And there are
 
 
 Two minimum reasonable models
-```{r}
+```{r, warning=FALSE, error=FALSE}
 fit_mini1 <- coxph(surv_object ~  Upsizing + Prosthesis_Anat_Size + Age,
                    data = df_surv_known)
 
@@ -352,7 +355,7 @@ anova(fit_mini1, fit_mini2)
 
 
 Test minimal model
-```{r}
+```{r, warning=FALSE, error=FALSE}
 test.ph <- cox.zph(fit_mini2)
 ggcoxzph(test.ph)
 concordance(fit_mini2)
@@ -360,7 +363,7 @@ concordance(fit_mini2)
 
 
 Optimal model
-```{r}
+```{r, warning=FALSE, error=FALSE}
 fit_optimal <- coxph(surv_object ~  Upsizing + Prosthesis_Anat_Size  + Age + Surgeon + log10(STS+1),
                    data = df_surv_known)
 
@@ -368,14 +371,14 @@ tbl_optimal <- tbl_regression(fit_optimal, exponentiate = TRUE)
 tbl_optimal
 ```
 
-```{r}
+```{r, warning=FALSE, error=FALSE}
 
 tbl_merge(list(tbl_crude, tbl2, tbl_full), tab_spanner = c("Univarative", "Adjustment_1", "Adjasment_full"))
 ```
 
 
 Let's test the model in more detail
-```{r}
+```{r, warning=FALSE, error=FALSE}
 
 cox.zph(fit_full)
 test.ph <- cox.zph(fit_full)
@@ -400,7 +403,7 @@ sline.col = "black") + geom_bar(stat = "identity")
 
 Building a Forrest Raft for a model with categories
 
-```{r}
+```{r, warning=FALSE, error=FALSE}
 df_surv_known <- df_surv_known %>% 
   mutate(Age__ = if_else(Age < 70, "< 70", "70+"),
          BMI__ = if_else(BMI < 30, "< 30", "30+"),
@@ -422,7 +425,7 @@ ggforest(fit_covariance)
 
 
 Forrest raft construction for the model within the categories
-```{r}
+```{r, warning=FALSE, error=FALSE}
 
 perform_cox_analysis <- function(df, subgroup_var, subgroup_level) {
   # Filter for subgroup
@@ -532,7 +535,7 @@ final_results
 
 Let us construct a Forest plot of upsizing in the subgroups of the study. In this way we can understand the interaction of patients with upsizing
 
-```{r}
+```{r, warning=FALSE, error=FALSE}
 # devtools::install_github("rdboyes/forester")
 
 
@@ -589,7 +592,7 @@ forester_plot <- forester(
 )
 ```
 
-```{r, warning = FALSE}
+```{r, warning=FALSE, error=FALSE}
 df_surv_all <- df_filter %>% 
   select("Case_Num", "Age", "BMI", "Gender", "NYHA_Heart_Fail_Class", "STS", "Prosthesis_Anat_Aort_Valve", "Pre_Bicuspid", "Prosthesis_Anat_Size", "Sx_Date", "Upsizing", "OS_Event", "DUR", "Sx_Urgency", "Sx_Surgeon") %>% 
   mutate(Prosthesis_Anat_Size = as.numeric(Prosthesis_Anat_Size),
@@ -625,7 +628,7 @@ df_surv_all %>%
 
 
 Dynamics of HR deaths over time
-```{r}
+```{r, warning=FALSE, error=FALSE}
 haz <- fitSmoothHazard(OS_Event ~ ns(time_year, df = 3) + log10(STS+1) + Prosthesis_Anat_Size + Upsizing,
                    data = df_surv_known, time = "time_year")
 
@@ -640,7 +643,7 @@ gg_object +
 ```
 
 
-```{r}
+```{r, warning=FALSE, error=FALSE}
 fit_covariance <- coxph(surv_object ~ log10(STS + 1) + Prosthesis_Anat_Aort_Valve + Upsizing,
                    data = df_surv_known)
 
@@ -660,7 +663,7 @@ anova(fit_covariance, fit_covariance2)
 
 
 # Multivariate Imputation by Chained Equations (MICE)
-```{r eval=FALSE, include=FALSE}
+```{r, warning=FALSE, error=FALSE, include=FALSE}
 df_filter%>% 
 select(Case_Num, Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_Anat_Size, Prosthesis_Size, Pre_LVOT, DUR, BMI, Prosthesis_Anat_Aort_Valve, Sx_Surgeon, Upsizing, Pre_LVOT, OS_Event, STS, Sx_Urgency, Sx_Date) %>% 
    add_count(Sx_Surgeon) %>% 
@@ -701,7 +704,7 @@ select(Case_Num, Age, Gender, Height, Weight, NYHA_Heart_Fail_Class, Prosthesis_
 # imp_ridge <- mice(df4, meth = "ridge", seed = 123) # Random indicator for nonignorable data
 ```
 
-```{r}
+```{r, warning=FALSE, error=FALSE, include=FALSE}
 imp_destr <- mice::complete(imp, 'long', include = TRUE) %>%
   mutate(Upsizing = as.factor(if_else(Upsizing == 0, "Anatomical_Size", "UP_size", )))
 
@@ -710,7 +713,7 @@ imp_destr <- as.mids(imp_destr)
 complete(imp, 'long', include = FALSE)
 ```
 
-```{r eval=FALSE}
+```{r, warning=FALSE, error=FALSE, include=FALSE}
 
 fit <- with(imp_destr, coxph(Surv(time = DUR, event = OS_Event) ~ Upsizing + Prosthesis_Anat_Size + Age + Surgeon + BMI + Gender + log10(STS+1) + NYHA_Heart_Fail_Class + Prosthesis_Anat_Aort_Valve))
 
@@ -729,7 +732,7 @@ tbl_merge(list(tbl_full %>% add_n(location = "level"), tbl %>% add_n(location = 
 
 ```
 
-```{r}
+```{r, warning=FALSE, error=FALSE}
 
 ```
 
