@@ -1,0 +1,481 @@
+---
+title: "Safety, Surgery metrics, Life Quality vs Upsizing"
+output: html_document
+date: "2024-01-09"
+author: "Nadja Lukashevich"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message=FALSE)
+
+library(tidyverse)
+library(dplyr)
+library(gtsummary)
+library(readr)
+library(dagitty)
+library(ggdag)
+library(modelsummary)
+library(ggfortify)
+library(MASS, include.only = c("polr"))
+```
+
+```{r, include=FALSE}
+# Чтение данных
+df <- read_tsv('data/interim/df_safety_surg_lq.tsv', show_col_types = FALSE)
+
+# Преобразование указанных столбцов в факторы
+df <- df%>%
+  filter(Prosthesis_Anat_Aort_Valve != 2) %>%
+  mutate(
+    Sx_Intraop_Stimul = factor(Sx_Intraop_Stimul),
+    REOP_Flag = factor(REOP_Flag),
+    Reop_num_within_30_with_implant_Flag = factor(Reop_num_within_30_with_implant_Flag),
+    Reop_num_within_30_Flag = factor(Reop_num_within_30_Flag),
+    Gender = factor(Gender),
+    Prosthesis_Anat_Aort_Valve = factor(Prosthesis_Anat_Aort_Valve),
+    Upsizing = factor(Upsizing),
+    Implanted_Earlier = factor(Implanted_Earlier),
+    FUEcho_Signs_of_SVD = factor(FUEcho_Signs_of_SVD),
+    Endocard = factor(Endocard),
+    Sx_Surgeon_shortened = factor(Sx_Surgeon_shortened),
+    LQ_Mobility = factor(LQ_Mobility),
+    LQ_Self_Care = factor(LQ_Self_Care),
+    LQ_Dayt_Activity = factor(LQ_Dayt_Activity),
+    LQ_Fear = factor(LQ_Fear),
+    LQ_Pain = factor(LQ_Pain),
+    NYHA_Heart_Fail_Class = factor(NYHA_Heart_Fail_Class),
+  )
+```
+
+# Descriptive statistics
+```{r}
+data_for_summary <- df  %>%
+  select(-Case_Num, -"REOP?")
+
+table_summary <- data_for_summary %>%
+  tbl_summary(
+    by = Upsizing,
+    type = all_continuous() ~ "continuous2",
+    missing = "no",
+    statistic = list(
+      all_continuous() ~ c("{median}({IQR})","{mean}±{sd}", "{min}; {max}"), 
+      all_categorical() ~ "{n}({p}%)" 
+    )
+  ) %>% 
+  add_overall() %>% 
+  add_n() %>% 
+  add_p() %>% 
+  modify_header(label = "**Переменные**") %>% 
+  modify_spanning_header(c("stat_1", "stat_2") ~ "**Описательная статистика по стратегии**")%>%   modify_footnote(
+    all_stat_cols() ~ "Median (IQR), Mean±std, Min; Max, or N(Frequency)"
+  ) 
+
+
+table_summary
+```
+# Reoperations and SVD
+
+```{r}
+data_reop <- df %>% select(c('REOP_Flag', 'Reop_num_within_30_with_implant_Flag', 'Reop_num_within_30_Flag','Age', 'BMI', 'log10_STS', 'NYHA_Heart_Fail_Class', 'Prosthesis_Anat_Aort_Valve', 'Prosthesis_Anat_Size', 'Implanted_Earlier', 'Upsizing'))
+data_reop <- na.omit(data_reop)
+print(dim(data_reop))
+
+data_svd <- df %>% select(c('FUEcho_Signs_of_SVD', 'Age', 'BMI', 'log10_STS', 'NYHA_Heart_Fail_Class', 'Prosthesis_Anat_Aort_Valve', 'Prosthesis_Anat_Size', 'Endocard', 'Upsizing'))
+data_svd <- na.omit(data_svd)
+print(dim(data_svd))
+```
+```{r}
+dag <- dagitty('dag {
+"Anatomical  size of aortic valve" [adjusted,pos="-1.554,0.741"]
+"Degradation of implant" [outcome,pos="0.236,-0.422"]
+"Implant earlier" [adjusted,pos="-1.935,-0.785"]
+"Reoperations within 30 days with implant" [outcome,pos="0.255,0.103"]
+"Reoperations within 30 days" [outcome,pos="0.261,0.628"]
+Age [adjusted,pos="-1.754,-0.220"]
+BMI [adjusted,pos="-1.398,-0.583"]
+Endocard [adjusted,pos="-0.718,-0.898"]
+NYHA [adjusted,pos="-1.947,0.410"]
+Reoperations [outcome,pos="0.255,1.298"]
+STS [adjusted,pos="-2.140,-0.042"]
+Upsizing [exposure,pos="-1.978,1.451"]
+"Anatomical  size of aortic valve" -> Upsizing
+"Implant earlier" -> "Reoperations within 30 days with implant"
+"Implant earlier" -> "Reoperations within 30 days"
+"Implant earlier" -> Reoperations
+Age -> "Reoperations within 30 days with implant"
+Age -> "Reoperations within 30 days"
+Age -> Reoperations
+BMI -> "Degradation of implant"
+BMI -> "Reoperations within 30 days with implant"
+BMI -> "Reoperations within 30 days"
+BMI -> Reoperations
+Endocard -> "Degradation of implant"
+Endocard -> Upsizing
+NYHA -> "Degradation of implant"
+NYHA -> "Reoperations within 30 days with implant"
+NYHA -> "Reoperations within 30 days"
+NYHA -> Reoperations
+STS -> "Degradation of implant"
+STS -> "Reoperations within 30 days with implant"
+STS -> "Reoperations within 30 days"
+STS -> Reoperations
+Upsizing -> "Degradation of implant"
+Upsizing -> "Reoperations within 30 days with implant"
+Upsizing -> "Reoperations within 30 days"
+Upsizing -> Reoperations
+}')
+ggdag_adjustment_set(tidy_dagitty(dag), 
+               exposure = "Upsizing",
+               outcome = "Reoperations", 
+               effect = "direct", text_col='black', shadow=TRUE, node_size=5)+theme_classic()+
+  labs(title="DAG для оценки влияния апсайзинга на событие реоперации", x="", y="") 
+ 
+```
+```{r}
+model_crude_REOP_Flag <- glm(REOP_Flag~Upsizing, data=data_reop, family='binomial')
+model_crude_Reop_num_within_30_with_implant_Flag <- glm(Reop_num_within_30_with_implant_Flag~Upsizing, data=data_reop, family='binomial')
+model_crude_Reop_num_within_30_Flag <- glm(Reop_num_within_30_Flag~Upsizing, data=data_reop, family='binomial')
+model_crude_FUEcho_Signs_of_SVD <- glm(FUEcho_Signs_of_SVD~Upsizing, data=data_svd, family='binomial')
+
+```
+
+```{r}
+modelsummary(list("Reoperations"=model_crude_REOP_Flag,"Reoperations within 30 days"= model_crude_Reop_num_within_30_Flag, "Reoperations within 30 days with implant"=model_crude_Reop_num_within_30_with_implant_Flag, "Signs of implant degradation"=model_crude_FUEcho_Signs_of_SVD), statistic = c("conf.int", "p.value"), exponentiate = TRUE)
+```
+
+
+```{r}
+model_adj_REOP_Flag <- glm(REOP_Flag~Upsizing+Age+BMI+NYHA_Heart_Fail_Class+Prosthesis_Anat_Aort_Valve+Prosthesis_Anat_Size+Implanted_Earlier, data=data_reop, family='binomial')
+model_adj_Reop_num_within_30_with_implant_Flag <- glm(Reop_num_within_30_with_implant_Flag~Upsizing+Age+BMI+NYHA_Heart_Fail_Class+Prosthesis_Anat_Aort_Valve+Prosthesis_Anat_Size+Implanted_Earlier, data=data_reop, family='binomial')
+model_adj_Reop_num_within_30_Flag <- glm(Reop_num_within_30_Flag~Upsizing+Age+BMI+NYHA_Heart_Fail_Class+Prosthesis_Anat_Aort_Valve+Prosthesis_Anat_Size+Implanted_Earlier, data=data_reop, family='binomial')
+model_adj_FUEcho_Signs_of_SVD <- glm(FUEcho_Signs_of_SVD~Upsizing+Age+BMI+NYHA_Heart_Fail_Class+Prosthesis_Anat_Aort_Valve+Prosthesis_Anat_Size+Endocard, data=data_svd, family='binomial')
+
+```
+```{r}
+modelsummary(list("Reoperations"=model_adj_REOP_Flag,"Reoperations within 30 days"= model_adj_Reop_num_within_30_Flag, "Reoperations within 30 days with implant"=model_adj_Reop_num_within_30_with_implant_Flag, "Signs of implant degradation"=model_adj_FUEcho_Signs_of_SVD), statistic = c("conf.int", "p.value"), exponentiate = TRUE)
+```
+```{r}
+modelplot(model_adj_REOP_Flag, coef_omit = 'Interc', exponentiate = FALSE)+theme_classic() + labs(title="Reoperations prediction, N=1468", x="Coefficients, 95% CI", y="Variables")+ 
+     geom_vline(xintercept = 0, linetype="dashed", color = "blue")+geom_label(data=df, aes(x = 0.1, y=2), label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-4, 4))
+```
+```{r}
+modelplot(model_adj_Reop_num_within_30_Flag, coef_omit = 'Interc', exponentiate = FALSE)+theme_classic() + labs(title="Reoperations within 30 days prediction, N=1468", x="Coefficients, 95% CI", y="Variables")+ 
+     geom_vline(xintercept = 0, linetype="dashed", color = "blue")+geom_label(data=df, aes(x = 0.1, y=2), label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-4, 4))
+```
+
+```{r}
+modelplot(model_adj_Reop_num_within_30_with_implant_Flag, coef_omit = 'Interc', exponentiate = FALSE)+theme_classic() + labs(title="Reoperations within 30 days with implant prediction, N=1468", x="Coefficients, 95% CI", y="Variables")+ 
+     geom_vline(xintercept = 0, linetype="dashed", color = "blue")+geom_label(data=df, aes(x = 0.1, y=2), label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-4, 4))
+```
+```{r}
+modelplot(model_adj_FUEcho_Signs_of_SVD, coef_omit = 'Interc', exponentiate = FALSE)+theme_classic() + labs(title="Signs of degradation prediction, N=590", x="Coefficients, 95% CI", y="Variables")+ 
+     geom_vline(xintercept = 0, linetype="dashed", color = "blue")+geom_label(data=df, aes(x = 0.1, y=2), label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-4, 4))
+```
+
+# Surgery metrics
+
+```{r}
+data_sx <- df %>% select(c('Sx_Cardiopulm_Bypass_t','Sx_Duration_Min','Sx_Aort_Clamp_t', 'Sx_Intraop_Stimul','Age', 'BMI', 'log10_STS', 'NYHA_Heart_Fail_Class', 'Prosthesis_Anat_Aort_Valve', 'Prosthesis_Anat_Size', 'Implanted_Earlier', 'Sx_Surgeon_shortened','Sx_Urgency_shortened',
+                         'Endocard',  'Upsizing'))
+data_sx <- na.omit(data_sx)
+print(dim(data_sx))
+
+```
+```{r}
+dag <- dagitty('dag {
+"Anatomical  size of aortic valve" [adjusted,pos="-1.529,0.805"]
+"Aortic clamping time" [outcome,pos="0.411,1.427"]
+"Cardiopulmonary bypass time" [outcome,pos="0.398,0.757"]
+"Implant earlier" [adjusted,pos="-1.935,-0.785"]
+"Intraoperative stimulation" [outcome,pos="0.386,-0.228"]
+"Surgery duration" [outcome,pos="0.417,0.256"]
+"Surgery urgency" [adjusted,pos="-0.905,-0.276"]
+Age [adjusted,pos="-1.754,-0.220"]
+BMI [adjusted,pos="-1.398,-0.583"]
+Endocard [adjusted,pos="-0.893,-0.833"]
+NYHA [adjusted,pos="-1.947,0.410"]
+STS [adjusted,pos="-2.140,-0.042"]
+Surgeon [adjusted,pos="-1.049,0.224"]
+Upsizing [exposure,pos="-1.978,1.451"]
+"Anatomical  size of aortic valve" -> Upsizing
+"Implant earlier" -> "Aortic clamping time"
+"Implant earlier" -> "Cardiopulmonary bypass time"
+"Implant earlier" -> "Intraoperative stimulation"
+"Implant earlier" -> "Surgery duration"
+"Surgery urgency" -> "Intraoperative stimulation"
+"Surgery urgency" -> Upsizing
+Age -> "Aortic clamping time"
+Age -> "Cardiopulmonary bypass time"
+Age -> "Intraoperative stimulation"
+Age -> "Surgery duration"
+BMI -> "Aortic clamping time"
+BMI -> "Cardiopulmonary bypass time"
+BMI -> "Intraoperative stimulation"
+BMI -> "Surgery duration"
+Endocard -> "Aortic clamping time"
+Endocard -> "Cardiopulmonary bypass time"
+Endocard -> "Intraoperative stimulation"
+Endocard -> "Surgery duration"
+Endocard -> Upsizing
+NYHA -> "Aortic clamping time"
+NYHA -> "Cardiopulmonary bypass time"
+NYHA -> "Intraoperative stimulation"
+NYHA -> "Surgery duration"
+STS -> "Aortic clamping time"
+STS -> "Cardiopulmonary bypass time"
+STS -> "Intraoperative stimulation"
+STS -> "Surgery duration"
+Surgeon -> "Aortic clamping time"
+Surgeon -> "Cardiopulmonary bypass time"
+Surgeon -> "Intraoperative stimulation"
+Surgeon -> "Surgery duration"
+Surgeon -> Upsizing
+}')
+ggdag_adjustment_set(tidy_dagitty(dag), 
+               exposure = "Upsizing",
+               outcome = "Surgery duration", 
+               effect = "direct", text_col='black', shadow=TRUE, node_size=5)+theme_classic()+
+  labs(title="DAG для оценки влияния апсайзинга на метрики операции", x="", y="") 
+ 
+```
+```{r}
+ggplot() + geom_density(data = data_sx, aes(x = Sx_Cardiopulm_Bypass_t, fill = "Sx_Cardiopulm_Bypass_t"), alpha = 0.6) +
+  geom_density(data = data_sx, aes(x = Sx_Duration_Min, fill = "Sx_Duration_Min"), alpha = 0.6)+
+  geom_density(data = data_sx, aes(x = Sx_Aort_Clamp_t, fill = "Sx_Aort_Clamp_t"), alpha = 0.6) +
+  scale_fill_manual(values = c("Sx_Cardiopulm_Bypass_t" = "skyblue", "Sx_Duration_Min" = "darkolivegreen", "Sx_Aort_Clamp_t"='mediumpurple'), 
+                    name = "Метрики операции", 
+                    labels = c("Sx_Cardiopulm_Bypass_t" = "Время искусственного кровообращения", "Sx_Duration_Min" = "Длительность операции", "Sx_Aort_Clamp_t" = "Время пережатия аорты")) +
+  labs(title = "Распределение временных метрик операции", x = "Метрики операции, минуты", y = "Плотность") +
+  theme_classic()
+```
+
+```{r}
+model_crude_Sx_Cardiopulm_Bypass_t <- lm(Sx_Cardiopulm_Bypass_t~Upsizing, data=data_sx)
+model_crude_Sx_Duration_Min <- lm(Sx_Duration_Min~Upsizing, data=data_sx)
+model_crude_Sx_Aort_Clamp_t <- lm(Sx_Aort_Clamp_t~Upsizing, data=data_sx)
+
+model_crude_Sx_Intraop_Stimul <- glm(Sx_Intraop_Stimul~Upsizing, data=data_sx, family='binomial')
+```
+```{r}
+autoplot(model_crude_Sx_Cardiopulm_Bypass_t)+theme_classic()
+autoplot(model_crude_Sx_Duration_Min)+theme_classic()
+autoplot(model_crude_Sx_Aort_Clamp_t)+theme_classic()
+
+```
+
+
+```{r}
+modelsummary(list("Cardiopulmonary bypass time"=model_crude_Sx_Cardiopulm_Bypass_t,"Surgery Duration"= model_crude_Sx_Duration_Min, "Aortic Clamping Time"=model_crude_Sx_Aort_Clamp_t, "Intaoperative stimuli"=model_crude_Sx_Intraop_Stimul), statistic = c("conf.int", "p.value"), exponentiate = FALSE)
+
+print_OR_CI <- function(model, name) {
+  coef_ <- exp(coef(model))
+  coef_value <- coef_[name]
+  exp_confint_lower <- exp(confint(model)[name, 1])
+  exp_confint_upper <- exp(confint(model)[name, 2])
+  print(paste0('OR for ', name, ' is ', round(coef_value,2), 
+               ' , 95% CI: [', round(exp_confint_lower,2), ', ', round(exp_confint_upper,2), ']'))
+}
+
+print_OR_CI(model_crude_Sx_Intraop_Stimul, 'Upsizing1')
+```
+
+```{r}
+model_adj_Sx_Cardiopulm_Bypass_t <- lm(Sx_Cardiopulm_Bypass_t~Upsizing+Endocard+Sx_Surgeon_shortened+Sx_Urgency_shortened+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+Implanted_Earlier+log10_STS+BMI+Age, data=data_sx)
+model_adj_Sx_Duration_Min <- lm(Sx_Duration_Min~Upsizing+Endocard+Sx_Surgeon_shortened+Sx_Urgency_shortened+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+Implanted_Earlier+log10_STS+BMI+Age, data=data_sx)
+model_adj_Sx_Aort_Clamp_t <- lm(Sx_Aort_Clamp_t~Upsizing+Endocard+Sx_Surgeon_shortened+Sx_Urgency_shortened+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+Implanted_Earlier+log10_STS+BMI+Age, data=data_sx)
+
+model_adj_Sx_Intraop_Stimul <- glm(Sx_Intraop_Stimul~Upsizing+Endocard+Sx_Surgeon_shortened+Sx_Urgency_shortened+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+Implanted_Earlier+log10_STS+BMI+Age, data=data_sx, family='binomial')
+
+model_adj_Sx_Intraop_Stimul_wo_Surgeon <- glm(Sx_Intraop_Stimul~Upsizing+Endocard+Sx_Urgency_shortened+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+Implanted_Earlier+log10_STS+BMI+Age, data=data_sx, family='binomial')
+```
+```{r}
+autoplot(model_adj_Sx_Cardiopulm_Bypass_t)+theme_classic()
+autoplot(model_adj_Sx_Duration_Min)+theme_classic()
+autoplot(model_adj_Sx_Aort_Clamp_t)+theme_classic()
+
+```
+
+
+```{r}
+modelsummary(list("Cardiopulmonary bypass time"=model_adj_Sx_Cardiopulm_Bypass_t,"Surgery Duration"= model_adj_Sx_Duration_Min, "Aortic Clamping Time"=model_adj_Sx_Aort_Clamp_t, "Intaoperative stimuli"=model_adj_Sx_Intraop_Stimul,"Intaoperative stimuli, w/o Surgeno"=model_adj_Sx_Intraop_Stimul_wo_Surgeon), statistic = c("conf.int", "p.value"), exponentiate = FALSE)
+
+print_OR_CI(model_adj_Sx_Intraop_Stimul, 'Upsizing1')
+print_OR_CI(model_adj_Sx_Intraop_Stimul_wo_Surgeon, 'Upsizing1')
+
+```
+
+
+```{r}
+modelplot(model_adj_Sx_Aort_Clamp_t, coef_omit = 'Interc')+theme_classic() + labs(title="Aortic Clamping prediction, N=1467", x="Coefficients, 95% CI", y="Variables")+ 
+     geom_vline(xintercept = 0, linetype="dashed", color = "red")+geom_label(data=data_sx, aes(x = 0.1, y=2), label = "Beta = 0", vjust = 1.5, color="red", hjust=-0.02) +
+    coord_cartesian(xlim = c(-10, 4))
+```
+```{r}
+modelplot(model_adj_Sx_Cardiopulm_Bypass_t, coef_omit = 'Interc')+theme_classic() + labs(title="Cardiopulmonary bypass time prediction, N=1467", x="Coefficients, 95% CI", y="Variables")+ 
+     geom_vline(xintercept = 0, linetype="dashed", color = "red")+geom_label(data=data_sx, aes(x = 0.1, y=2), label = "Beta = 0", vjust = 1.5, color="red", hjust=-0.02) +
+    coord_cartesian(xlim = c(-15, 4))
+```
+```{r}
+modelplot(model_adj_Sx_Duration_Min, coef_omit = 'Interc')+theme_classic() + labs(title="Surgery Duration prediction, N=1467", x="Coefficients, 95% CI", y="Variables")+ 
+     geom_vline(xintercept = 0, linetype="dashed", color = "red")+geom_label(data=data_sx, aes(x = 0.1, y=2), label = "Beta = 0", vjust = 1.5, color="red", hjust=-0.02) +
+    coord_cartesian(xlim = c(-15, 15))
+```
+```{r}
+result <- anova(model_adj_Sx_Intraop_Stimul_wo_Surgeon, model_adj_Sx_Intraop_Stimul, test = "F")[2, "Pr(>F)"]
+if (result<0.1){
+  print('Addition of Surgeon improves model')
+}else{
+  print('Addition of Surgeon doesn\'t improve te model')
+}
+```
+```{r}
+modelplot(model_adj_Sx_Intraop_Stimul_wo_Surgeon, coef_omit = 'Interc', exponentiate = FALSE) +
+    theme_classic() +
+    labs(title="Intraoperative stimuli prediction, w/o Surgeon, N=1467", 
+         x="Coefficients, 95% CI", 
+         y="Variables") +
+    geom_vline(xintercept = 0, linetype="dashed", color = "blue") +
+    geom_label(data=data_sx, aes(x = 0.1, y=2), 
+               label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-2, 2))
+```
+
+
+```{r}
+modelplot(model_adj_Sx_Intraop_Stimul, coef_omit = 'Interc', exponentiate = FALSE) +
+    theme_classic() +
+    labs(title="Intraoperative stimuli prediction, N=1467", 
+         x="Coefficients, 95% CI", 
+         y="Variables") +
+    geom_vline(xintercept = 0, linetype="dashed", color = "blue") +
+    geom_label(data=data_sx, aes(x = 0.1, y=2), 
+               label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-2, 2))
+
+```
+
+# Life Quality metrics
+
+
+```{r}
+data_lq <- df %>% select(c('LQ_Mobility','LQ_Self_Care','LQ_Dayt_Activity','LQ_Fear','LQ_Pain','Age', 'BMI', 'log10_STS', 'NYHA_Heart_Fail_Class', 'Prosthesis_Anat_Aort_Valve', 'Prosthesis_Anat_Size', 'Upsizing'))
+data_lq <- na.omit(data_lq)
+print(dim(data_lq))
+
+```
+```{r}
+dag <- dagitty('dag {
+"Anatomical  size of aortic valve" [adjusted,pos="-1.517,0.603"]
+"LQ metrics" [outcome,pos="0.199,1.144"]
+Age [adjusted,pos="-1.754,-0.220"]
+BMI [adjusted,pos="-1.398,-0.583"]
+NYHA [adjusted,pos="-1.947,0.410"]
+STS [adjusted,pos="-2.140,-0.042"]
+Upsizing [exposure,pos="-2.034,1.112"]
+"Anatomical  size of aortic valve" -> Upsizing
+Age -> "LQ metrics"
+BMI -> "LQ metrics"
+NYHA -> "LQ metrics"
+STS -> "LQ metrics"
+Upsizing -> "LQ metrics"
+}')
+ggdag_adjustment_set(tidy_dagitty(dag), 
+               exposure = "Upsizing",
+               outcome = "LQ metrics", 
+               effect = "direct", text_col='black', shadow=TRUE, node_size=5)+theme_classic()+
+  labs(title="DAG для оценки влияния апсайзинга на метрики life quality", x="", y="") 
+ 
+```
+
+```{r}
+model_crude_LQ_Mobility <- polr(LQ_Mobility~Upsizing, data=data_lq)
+model_crude_LQ_Self_Care <- polr(LQ_Self_Care~Upsizing, data=data_lq)
+model_crude_LQ_Dayt_Activity <- polr(LQ_Dayt_Activity~Upsizing, data=data_lq)
+model_crude_LQ_Fear <- polr(LQ_Fear~Upsizing, data=data_lq)
+model_crude_LQ_Pain <- polr(LQ_Pain~Upsizing, data=data_lq)
+```
+
+
+```{r}
+modelsummary(list("Mobility"=model_crude_LQ_Mobility,"Self Care"= model_crude_LQ_Self_Care, "Daytime Activity"=model_crude_LQ_Dayt_Activity, "Fear"=model_crude_LQ_Fear, "Pain"=model_crude_LQ_Pain), statistic = c("conf.int", "p.value"), exponentiate = TRUE)
+```
+
+```{r}
+
+model_adj_LQ_Mobility <- polr(LQ_Mobility~Upsizing+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+log10_STS+BMI+Age, data=data_lq)
+model_adj_LQ_Self_Care <- polr(LQ_Self_Care~Upsizing+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+log10_STS+BMI+Age, data=data_lq)
+model_adj_LQ_Dayt_Activity <- polr(LQ_Dayt_Activity~Upsizing+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+log10_STS+BMI+Age, data=data_lq)
+model_adj_LQ_Fear <- polr(LQ_Fear~Upsizing+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+log10_STS+BMI+Age, data=data_lq)
+model_adj_LQ_Pain <- polr(LQ_Pain~Upsizing+Prosthesis_Anat_Size+Prosthesis_Anat_Aort_Valve+NYHA_Heart_Fail_Class+log10_STS+BMI+Age, data=data_lq)
+```
+
+
+```{r}
+modelsummary(list("Mobility"=model_adj_LQ_Mobility,"Self Care"= model_adj_LQ_Self_Care, "Daytime Activity"=model_adj_LQ_Dayt_Activity, "Fear"=model_adj_LQ_Fear, "Pain"=model_adj_LQ_Pain), statistic = c("conf.int", "p.value"), exponentiate = TRUE)
+
+```
+
+
+```{r}
+modelplot(model_adj_LQ_Mobility, exponentiate = FALSE) +
+    theme_classic() +
+    labs(title="Mobility prediction, N=667", 
+         x="Coefficients, 95% CI", 
+         y="Variables") +
+    geom_vline(xintercept = 0, linetype="dashed", color = "blue") +
+    geom_label(data=data_sx, aes(x = 0.1, y=2), 
+               label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-5, 5))
+```
+```{r}
+modelplot(model_adj_LQ_Dayt_Activity, exponentiate = FALSE) +
+    theme_classic() +
+    labs(title="Dayt Activity, N=667", 
+         x="Coefficients, 95% CI", 
+         y="Variables") +
+    geom_vline(xintercept = 0, linetype="dashed", color = "blue") +
+    geom_label(data=data_sx, aes(x = 0.1, y=2), 
+               label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-5, 5))
+```
+```{r}
+modelplot(model_adj_LQ_Self_Care, exponentiate = FALSE) +
+    theme_classic() +
+    labs(title="Self Care, N=667", 
+         x="Coefficients, 95% CI", 
+         y="Variables") +
+    geom_vline(xintercept = 0, linetype="dashed", color = "blue") +
+    geom_label(data=data_sx, aes(x = 0.1, y=2), 
+               label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-5, 5))
+```
+```{r}
+modelplot(model_adj_LQ_Fear, exponentiate = FALSE) +
+    theme_classic() +
+    labs(title="Fear, N=667", 
+         x="Coefficients, 95% CI", 
+         y="Variables") +
+    geom_vline(xintercept = 0, linetype="dashed", color = "blue") +
+    geom_label(data=data_sx, aes(x = 0.1, y=2), 
+               label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-5, 5))
+```
+```{r}
+modelplot(model_adj_LQ_Pain, exponentiate = FALSE) +
+    theme_classic() +
+    labs(title="Pain, N=667", 
+         x="Coefficients, 95% CI", 
+         y="Variables") +
+    geom_vline(xintercept = 0, linetype="dashed", color = "blue") +
+    geom_label(data=data_sx, aes(x = 0.1, y=2), 
+               label = "log(OR) = 0", vjust = 1.5, color="blue", hjust=-0.02) +
+    coord_cartesian(xlim = c(-5, 5))
+```
+
+
+
+
