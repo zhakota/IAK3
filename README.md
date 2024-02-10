@@ -5,7 +5,8 @@ This is a retrospective cohort study assessing the effectiveness of oversized bi
 
 ## Introduction
 The aortic valve permits blood to flow in one direction, from the left ventricle to the aorta. The most common disease of the aortic valve is aortic stenosis [1], which leads to an increased transvalvular pressure gradient. Its main cause is calcification of the valve leaflets [2]. A scheme of normal aortic valve and a valve under a stenosis is shown at Figure 1.
-![aortic_valve](data/pics/aortic_valve.png)***Figure 1.** Normal aortic valve and aortic valve under a stenosis. * 
+![aortic_valve](data/pics/aortic_valve.png)
+***Figure 1.** Normal aortic valve and aortic valve under a stenosis. * 
 
 
 During aortic valve replacement surgery, the standard procedure is direct intraoperative measurement of the aortic annulus and implantation of the prosthesis of the measured size [3]. The placement of a larger (oversized) prosthesis reduces the mean pressure gradient (MPG) across the valve.  An example of bioprosthesis is shown at Figure 2.
