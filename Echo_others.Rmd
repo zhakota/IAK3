@@ -579,7 +579,7 @@ mod_summary_EF_post <- modelsummary::modelsummary(
   gof_map = "nobs",
   output="gt")
 
-mod_summary_MPG_post
+mod_summary_EF_post
   
 ```
 
@@ -668,6 +668,7 @@ mod_summary_MPG
   
 ```
 
+
 ```{r}
 gt::gtsave(mod_summary_MPG, "data/pics/mod_summary_MPG.png")
 ```
@@ -715,7 +716,7 @@ mod_summary_EF <- modelsummary::modelsummary(
   gof_map = "nobs",
   output="gt")
 
-mod_summary_MPG
+mod_summary_EF
   
 ```
 
