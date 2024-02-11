@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, error = FALSE)
 library(readxl)
 library(tidyverse)
 library(GGally)
@@ -26,10 +26,15 @@ library(gtsummary)
 library(lmtest)
 library(gt)
 library(modelsummary)
-```
 
-```{r}
 df1_no_date <- read.csv("data/interim/df1_no_date.csv")
+
+df1 <- read_csv("data/interim/df1.csv")
+df1 <- df1 %>% 
+  mutate(Year_sx_date = year(Sx_Date)) %>% 
+  mutate(across(c(Upsizing, OS_Event), \(x) fct_recode(factor(x), 
+                                                      "No" = "0",
+                                                      "Yes" = "1")))
 ```
 
 # Correlation analysis
@@ -67,19 +72,7 @@ ggsave("data/pics/plot_cor.png", plot_cor, dpi = 200, width = 6, height = 4)
 
 # Additional graphs for EDA
 
-```{r}
-df1 <- read_csv("data/interim/df1.csv")
-df1 <- df1 %>% 
-  mutate(Year_sx_date = year(Sx_Date)) %>% 
-  mutate(across(c(Upsizing, OS_Event), \(x) fct_recode(factor(x), 
-                                                      "No" = "0",
-                                                      "Yes" = "1")))
-
- 
-
-```
-
-Bar plot of pattern over the years of replacement of aortic valve
+## Bar plot of pattern over the years of replacement of aortic valve
 
 ```{r}
 ggplot(df1, aes(x = Year_sx_date, fill =Upsizing)) +
@@ -93,7 +86,8 @@ ggplot(df1, aes(x = Year_sx_date, fill =Upsizing)) +
         axis.text.x = element_text(angle= 90 , vjust= 0.5 , hjust= 1 ))
 
 ```
-+ percent of operations
+
+## + percent of operations
 
 ```{r}
 ggplot(df1, aes(x = Year_sx_date, fill =Upsizing)) +
@@ -109,7 +103,7 @@ ggplot(df1, aes(x = Year_sx_date, fill =Upsizing)) +
 
 ```
 
-Box plot of STS from the outcome depending on the type of prosthetics.
+## Box plot of STS from the outcome depending on the type of prosthetics.
 
 ```{r}
 ggplot(df1) +
@@ -119,7 +113,8 @@ ggplot(df1) +
   theme(plot.title = element_text(size = 14, hjust = 0.5),
         axis.title = element_text(face = 'bold'))
 ```
-Box plot of MPG from the outcome depending on the type of prosthetics.
+
+## Box plot of MPG from the outcome depending on the type of prosthetics.
 
 ```{r}
 ggplot(df1) +
@@ -129,7 +124,6 @@ ggplot(df1) +
   theme(plot.title = element_text(size = 14, hjust = 0.5),
         axis.title = element_text(face = 'bold'))
 ```
-
 
 ## Сomorbidities
 
@@ -477,7 +471,7 @@ df_sx %>%
 ```
 
 
-# MPG (pre post) vs Upsizing
+# MPG (pre-post) vs Upsizing (linear regression)
 
 ```{r}
 df1 <- df1 %>% 
@@ -485,9 +479,9 @@ df1 <- df1 %>%
 
 ```
 
+**MPG post linear model**
 
 ```{r}
-#MPG post linear model
 df1_fit_MPG_post_crude <- lm(`Post_MAVG` ~ Upsizing, df1)
 
 tbl_regression(df1_fit_MPG_post_crude, intercept = TRUE) %>% 
@@ -495,10 +489,9 @@ tbl_regression(df1_fit_MPG_post_crude, intercept = TRUE) %>%
   add_glance_source_note()
 ```
 
-
+**MPG post linear model adj**
 
 ```{r}
-#MPG post linear model adj
 df1_fit_MPG_post_adj <- lm(`Post_MAVG` ~ `Pre MPG` + Upsizing + Prosthesis_Anat_Size, df1)
 
 tbl_regression(df1_fit_MPG_post_adj, intercept = TRUE) %>% 
@@ -523,6 +516,8 @@ autoplot(df1_fit_MPG_post_adj)
 #robust_fit
 ```
 
+**Summary table for MPG (pre-post)**
+
 ```{r}
 mod_summary_MPG_post <- modelsummary::modelsummary(
   list("MPG (post) crude " = df1_fit_MPG_post_crude,
@@ -543,8 +538,11 @@ mod_summary_MPG_post
 gt::gtsave(mod_summary_MPG_post, "data/pics/mod_summary_MPG_post.png")
 ```
 
+# EF (pre-post) linear model
+
+**EF post linear model**
+
 ```{r}
-#EF post linear model
 df1_fit_EF_post_crude <- lm(Post_LVEF ~ Upsizing, df1)
 
 tbl_regression(df1_fit_EF_post_crude , intercept = TRUE) %>% 
@@ -552,14 +550,22 @@ tbl_regression(df1_fit_EF_post_crude , intercept = TRUE) %>%
   add_glance_source_note()
 ```
 
+**EF post linear model adj**
+
 ```{r}
-#EF post linear model adj
 df1_fit_EF_post_adj <- lm(Post_LVEF ~ Pre_LVEF + Upsizing + Prosthesis_Anat_Size, df1)
 
 tbl_regression(df1_fit_EF_post_adj, intercept = TRUE) %>% 
   add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
   add_glance_source_note()
 ```
+
+```{r}
+autoplot(df1_fit_EF_post_adj)
+```
+
+
+**Summary table for EF (pre-post)**
 
 ```{r}
 mod_summary_EF_post <- modelsummary::modelsummary(
@@ -573,7 +579,7 @@ mod_summary_EF_post <- modelsummary::modelsummary(
   gof_map = "nobs",
   output="gt")
 
-mod_summary_MPG_post
+mod_summary_EF_post
   
 ```
 
@@ -581,7 +587,7 @@ mod_summary_MPG_post
 gt::gtsave(mod_summary_EF_post, "data/pics/mod_summary_EF_post.png")
 ```
 
-# MPG (pre fu) vs Upsizing
+# MPG (pre/follow-up) vs Upsizing
 
 ```{r}
 df1 <- df1 %>% 
@@ -609,9 +615,11 @@ ggpairs(
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 ```
-## MPG
 
-### Crude
+
+## Crude
+
+**MPG follow-up linear model**
 
 ```{r}
 summary(df1$`MPG diff pre fu`)
@@ -622,7 +630,8 @@ tbl_regression(df1_fit_FUEcho_MPG_crude, intercept = TRUE) %>%
   add_significance_stars(hide_ci = FALSE, hide_p = FALSE) %>% 
   add_glance_source_note()
 ```
-### Adjusted
+
+## Adjusted
 
 ```{r}
 df1_FUEcho_MPG_adj <- lm(`FUEcho_MPG` ~ `Pre MPG` + Upsizing + `Time, days (fu-sx)` + Prosthesis_Anat_Size, df1)
@@ -641,6 +650,7 @@ vif(df1_FUEcho_MPG_adj)
 autoplot(df1_FUEcho_MPG_adj)
 ```
 
+**Summary table for MPG (pre-follow-up)**
 
 ```{r}
 mod_summary_MPG <- modelsummary::modelsummary(
@@ -658,14 +668,17 @@ mod_summary_MPG
   
 ```
 
+
 ```{r}
 gt::gtsave(mod_summary_MPG, "data/pics/mod_summary_MPG.png")
 ```
 
 
-## EF
+# EF (pre/follow-up)
 
-### Crude
+## Crude
+
+**EF follow-up linear model**
 
 ```{r}
 df1_fit_FUEcho_EF_crude <- lm(`FUEcho_EF` ~ Upsizing, df1)
@@ -675,7 +688,7 @@ tbl_regression(df1_fit_FUEcho_EF_crude, intercept = TRUE) %>%
   add_glance_source_note()
 ```
 
-### Adjusted
+## Adjusted
 
 ```{r}
 df1_fit_FUEcho_EF_adj <- lm(`FUEcho_EF` ~ `Pre_LVEF` + Upsizing + `Time, days (fu-sx)` + Prosthesis_Anat_Size, df1)
@@ -689,6 +702,7 @@ tbl_regression(df1_fit_FUEcho_EF_adj, intercept = TRUE) %>%
 autoplot(df1_fit_FUEcho_EF_adj)
 ```
 
+**Summary table for EF (pre-follow-up)**
 
 ```{r}
 mod_summary_EF <- modelsummary::modelsummary(
@@ -702,7 +716,7 @@ mod_summary_EF <- modelsummary::modelsummary(
   gof_map = "nobs",
   output="gt")
 
-mod_summary_MPG
+mod_summary_EF
   
 ```
 
