@@ -1,2 +1,9 @@
 Diagn_df1_no_na_col_.html
 EDA_df1_no_na_col.html
+
+# Data Files
+
+*.csv
+*.xlsx
+*.xls
+*.RData
